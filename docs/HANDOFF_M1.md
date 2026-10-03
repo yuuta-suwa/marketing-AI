@@ -11,6 +11,8 @@
 - Agents: MarketDirector, PainMiner, ClusterNamer, JTBDAnalyst, RedTeam — LLM path (Anthropic) with Zod validation and evidence-id checks, plus deterministic fallbacks.
 - Connectors: Manual Import, Web Search (Brave), e-Stat, X, Google Places, Tripadvisor + 11 compliance-gated scaffolds.
 - Mobile UI: dashboard, research input, runs, run detail (live polling), opportunities, opportunity detail (evidence, score breakdown, red team, additional research, FRIDAY, decisions), FRIDAY, signals, clusters, settings (connectors, costs, scoring, security), placeholders for watchlists/reports.
+- Audit log: research.created / research.started / connector.executed / agent.executed / opportunity.decided / friday.* / research.completed.
+- Authentication guard (`src/lib/auth-guard.ts`) shared by proxy and app shell, unit-tested.
 - Docs set and CI workflow.
 
 ## Files changed
@@ -23,13 +25,13 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#key-decisions). Highlights: composite tena
 
 ## Database changes
 
-Four migrations (foundation, core schema, integrity, security). Apply in filename order. No destructive changes (initial schema).
+Five migrations (foundation, core schema, integrity, security, compliance vocabulary `APPROVED/RESTRICTED/PENDING_REVIEW/DISABLED_PENDING_COMPLIANCE/DISABLED` + connector terms notes). Apply in filename order.
 
 ## Tests
 
 | Suite | Result |
 |---|---|
-| `npm test` (unit + integration) | 73 passed |
+| `npm test` (unit + integration, incl. authentication guard and audit events) | 77 passed |
 | `npm run test:db` (PostgreSQL 16 + pgvector) | 42 assertions passed |
 | `npm run test:e2e` (Pixel 7, production build) | 3 passed |
 | `npm run lint`, `npm run typecheck`, `npm run build` | clean |

@@ -101,7 +101,10 @@ describe("first vertical slice (input → directive → sources → evidence →
     expect(connectorRuns.find((c) => c.connectorKey === "web_search")?.status).toBe("SKIPPED");
     const agentRuns = await ctx.repos.ops.listAgentRuns({ runId: run.id });
     expect(agentRuns.every((a) => a.status === "SUCCEEDED")).toBe(true);
-    expect(ctx.db.audit.some((a) => a.action === "research.completed")).toBe(true);
+    const actions = new Set(ctx.db.audit.map((a) => a.action));
+    for (const a of ["research.created", "research.started", "connector.executed", "agent.executed", "research.completed"]) {
+      expect(actions.has(a)).toBe(true);
+    }
   });
 
   it("runs Red Team, records a human decision, consults FRIDAY and starts additional research", async () => {
@@ -132,7 +135,8 @@ describe("first vertical slice (input → directive → sources → evidence →
     expect(extraRun).toMatchObject({ runType: "WILLINGNESS_TO_PAY", opportunityId: top.id, parentRunId: run.id });
     expect((await ctx.repos.research.listRuns({ opportunityId: top.id })).map((r) => r.id)).toContain(extra.runId);
 
-    expect(await friday.openAdvisorCouncil()).toMatchObject({ status: "NOT_AVAILABLE" });
+    expect(ctx.db.audit.some((a) => a.action === "friday.consult")).toBe(true);
+    expect(ctx.db.audit.some((a) => a.action === "opportunity.decided")).toBe(true);
   });
 
   it("enforces decision gates in the application layer", async () => {

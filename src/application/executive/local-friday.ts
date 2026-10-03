@@ -19,12 +19,19 @@ const PLANNED = (feature: string, milestone: string) => ({
 export class LocalFridayAdapter implements ExecutiveAssistantAdapter {
   constructor(private readonly ctx: AppContext) {}
 
+  /** Every FRIDAY action is audited (actor is the signed-in human). */
+  private audit(action: string, entityId?: string, metadata?: Record<string, unknown>) {
+    return this.ctx.repos.ops.audit(`friday.${action}`, entityId ? "opportunity" : "friday", entityId, metadata);
+  }
+
   async sendDirective(request: Parameters<ExecutiveAssistantAdapter["sendDirective"]>[0]) {
     const { run } = await createResearch(this.ctx, request);
+    await this.audit("send_directive", undefined, { runId: run.id });
     return runResearchPipeline(this.ctx, run.id, { manualItems: toManualItems(request.manualItems) });
   }
 
-  requestDeepResearch(opportunityId: string, type: Parameters<ExecutiveAssistantAdapter["requestDeepResearch"]>[1], note?: string) {
+  async requestDeepResearch(opportunityId: string, type: Parameters<ExecutiveAssistantAdapter["requestDeepResearch"]>[1], note?: string) {
+    await this.audit("request_deep_research", opportunityId, { type });
     return startAdditionalResearch(this.ctx, { opportunityId, type, note });
   }
 
@@ -39,6 +46,7 @@ export class LocalFridayAdapter implements ExecutiveAssistantAdapter {
       repo.listRedTeam(opportunityId),
     ]);
     const latestReview = reviews[0] ?? null;
+    await this.audit("consult", opportunityId);
     const unknowns = score ? score.score.missing.map((c) => `${CRITERION_LABEL_JA[c]}（未評価）`) : [];
     const total = opp.scoreTotal;
 
@@ -67,23 +75,28 @@ export class LocalFridayAdapter implements ExecutiveAssistantAdapter {
     return PLANNED("顧問会議（Advisor Council）", "Milestone 3 (Phase 6)");
   }
 
-  runRedTeam(opportunityId: string) {
+  async runRedTeam(opportunityId: string) {
+    await this.audit("run_red_team", opportunityId);
     return runRedTeam(this.ctx, opportunityId);
   }
 
   async approveOpportunity(opportunityId: string, toStatus: Parameters<ExecutiveAssistantAdapter["approveOpportunity"]>[1], rationale?: string) {
+    await this.audit("approve", opportunityId, { toStatus });
     return (await decideOpportunity(this.ctx, { opportunityId, decision: "APPROVE", toStatus, rationale })).decision;
   }
 
   async rejectOpportunity(opportunityId: string, rationale?: string) {
+    await this.audit("reject", opportunityId);
     return (await decideOpportunity(this.ctx, { opportunityId, decision: "REJECT", rationale })).decision;
   }
 
   async holdOpportunity(opportunityId: string, rationale?: string) {
+    await this.audit("hold", opportunityId);
     return (await decideOpportunity(this.ctx, { opportunityId, decision: "HOLD", rationale })).decision;
   }
 
   async watchOpportunity(opportunityId: string, rationale?: string) {
+    await this.audit("watch", opportunityId);
     return (await decideOpportunity(this.ctx, { opportunityId, decision: "WATCH", rationale })).decision;
   }
 

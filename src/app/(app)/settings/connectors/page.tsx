@@ -9,8 +9,9 @@ export const metadata = { title: "Connectors" };
 const COMPLIANCE_TONE: Record<string, string> = {
   APPROVED: "text-emerald-600",
   PENDING_REVIEW: "text-amber-600",
+  RESTRICTED: "text-amber-600",
   DISABLED_PENDING_COMPLIANCE: "text-zinc-500",
-  BLOCKED: "text-red-600",
+  DISABLED: "text-red-600",
 };
 
 export default async function ConnectorsPage() {

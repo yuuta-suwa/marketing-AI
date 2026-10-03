@@ -1,5 +1,35 @@
 # Architecture
 
+## System flow
+
+```mermaid
+flowchart TB
+  U[User] --> PWA[Mobile PWA<br/>src/app + src/components]
+  PWA --> APP[Application Layer<br/>server actions → use cases]
+  APP --> ORCH[Research Orchestrator<br/>runResearchPipeline]
+  ORCH --> GW[Connector Gateway<br/>compliance gate · budget · timeout · retry]
+  GW --> LAKE[(Evidence Lake<br/>source_items · evidence)]
+  LAKE --> AI[AI Processing<br/>PainMiner · embeddings · clustering]
+  AI --> OPP[Opportunity Engine<br/>JTBD · scoring · confidence · Red Team]
+  OPP --> FRI[FRIDAY Adapter<br/>ExecutiveAssistantAdapter]
+  FRI --> H[Human Decision]
+```
+
+## Dependency direction (domain at the centre)
+
+```mermaid
+flowchart LR
+  FE[Frontend<br/>src/app, src/components] --> APPL[Application<br/>src/application, src/agents]
+  APPL --> DOM[Domain<br/>src/domain]
+  INF[Infrastructure<br/>src/infrastructure: database, ai, memory] -.implements ports.-> APPL
+  INF --> DOM
+  CONN[Connectors<br/>src/connectors] -.implements MarketConnector.-> DOM
+  EXT[External Providers<br/>Supabase · Anthropic · Brave · e-Stat · X] --- INF
+  EXT --- CONN
+```
+
+`src/domain` imports nothing outside itself (plus Zod). Folder mapping to the suggested structure: `domain/{research,evidence,signal,cluster,opportunity,…}`, `application/{research,opportunity,executive}`, `agents/` (logical AI employees), `infrastructure/{supabase (database), ai, memory}`, `connectors/` (kept top-level as in the master spec), `lib/` (hash, logger, clock, auth guard).
+
 ## Layers
 
 ```mermaid

@@ -79,6 +79,13 @@ export async function collectSources(
           startedAt: started.toISOString(),
           completedAt: completed.toISOString(),
         });
+        await ctx.repos.ops.audit("connector.executed", "research_run", input.runId, {
+          connector: connector.id,
+          status: outcome.status,
+          resultCount: outcome.items.length,
+          retryCount: outcome.retryCount,
+          error: outcome.error,
+        });
         const level = outcome.status === "FAILED" ? "error" : outcome.status === "SKIPPED" ? "warn" : "info";
         log[level]("connector.finished", {
           status: outcome.status,

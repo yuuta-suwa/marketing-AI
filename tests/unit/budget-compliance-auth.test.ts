@@ -40,15 +40,15 @@ describe("compliance gate", () => {
   });
 
   it("blocks pending/disabled compliance", () => {
-    for (const status of ["PENDING_REVIEW", "DISABLED_PENDING_COMPLIANCE", "BLOCKED"] as const) {
+    for (const status of ["RESTRICTED", "PENDING_REVIEW", "DISABLED_PENDING_COMPLIANCE", "DISABLED"] as const) {
       expect(evaluateConnectorGate({ ...base, profile: { ...approved, status } })).toMatchObject({ allowed: false, reason: "COMPLIANCE" });
     }
   });
 
   it("organization overrides can only be stricter", () => {
     expect(effectiveComplianceStatus("PENDING_REVIEW", "APPROVED")).toBe("PENDING_REVIEW");
-    expect(effectiveComplianceStatus("APPROVED", "BLOCKED")).toBe("BLOCKED");
-    expect(evaluateConnectorGate({ ...base, orgStatus: "BLOCKED" }).allowed).toBe(false);
+    expect(effectiveComplianceStatus("APPROVED", "DISABLED")).toBe("DISABLED");
+    expect(evaluateConnectorGate({ ...base, orgStatus: "DISABLED" }).allowed).toBe(false);
   });
 
   it("blocks disabled connectors and missing credentials", () => {

@@ -50,6 +50,22 @@ export class AgentRunner {
     },
   ) {}
 
+  private async auditRun(call: AgentCall<unknown>, agentRunId: string, status: string, costUsd = 0): Promise<void> {
+    try {
+      await this.deps.ops.audit("agent.executed", "agent_run", agentRunId, {
+        agent: call.agentName,
+        status,
+        provider: call.provider,
+        costUsd,
+        researchRunId: call.researchRunId,
+        opportunityId: call.opportunityId,
+      });
+    } catch (e) {
+      // The agent_runs row is the primary record; an audit write failure is logged, not fatal.
+      this.deps.logger.error("audit.failed", { agent: call.agentName, error: (e as Error).message });
+    }
+  }
+
   async run<T>(call: AgentCall<T>): Promise<AgentOutcome<T>> {
     const used = this.calls.get(call.agentName) ?? 0;
     if (used >= this.deps.maxCallsPerAgent) {
@@ -77,6 +93,7 @@ export class AgentRunner {
         durationMs: 0,
       });
       this.deps.logger.warn("agent.budget_stop", { agent: call.agentName, status: "SKIPPED_BUDGET" });
+      await this.auditRun(call, record.id, "SKIPPED_BUDGET");
       return { status: "SKIPPED_BUDGET", reason: budget.reason, agentRunId: record.id };
     }
 
@@ -111,6 +128,7 @@ export class AgentRunner {
         cost_usd: result.costUsd,
         status: "SUCCEEDED",
       });
+      await this.auditRun(call, record.id, "SUCCEEDED", result.costUsd);
       return { status: "SUCCEEDED", output: result.output, agentRunId: record.id, costUsd: result.costUsd };
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
@@ -120,6 +138,7 @@ export class AgentRunner {
         durationMs: Date.now() - started,
       });
       this.deps.logger.error("agent.failed", { agent: call.agentName, error, status: "FAILED" });
+      await this.auditRun(call, record.id, "FAILED");
       return { status: "FAILED", error, agentRunId: record.id };
     }
   }

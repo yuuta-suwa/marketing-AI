@@ -13,9 +13,12 @@
 | Status | Meaning | Can run |
 |---|---|---|
 | APPROVED | access method and storage rights confirmed | yes (if enabled + credentials) |
+| RESTRICTED | usable only under conditions (e.g. manual, limited scope) | no automatic collection |
 | PENDING_REVIEW | official access exists, terms/plan need confirmation or legal review | no |
 | DISABLED_PENDING_COMPLIANCE | no confirmed permitted access method yet | no |
-| BLOCKED | explicitly forbidden by an org | no |
+| DISABLED | switched off or forbidden by the organization | no |
+
+Terms notes are kept in code (`ComplianceProfile.notes`, `termsUrl`) and per organization (`connectors.terms_url`, `connectors.terms_notes`, `compliance_checks`).
 
 Changing a code-level status from PENDING_REVIEW to APPROVED is a reviewed code change (or, for `web_search` / `x`, an operator env confirmation documenting that the subscription terms were reviewed). Org admins can record reviews in `compliance_checks` (who, when, terms URL, notes).
 

@@ -66,6 +66,7 @@ export async function runResearchPipeline(
 
     // ---- COLLECTING ------------------------------------------------------
     await move("COLLECTING");
+    await ctx.repos.ops.audit("research.started", "research_run", runId, { runType: run.runType });
     const settings: ConnectorSetting[] = await ctx.repos.ops.getConnectorSettings();
     const outcomes = await collectSources(ctx, {
       runId,

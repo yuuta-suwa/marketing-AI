@@ -1,8 +1,16 @@
+/**
+ * APPROVED                     access method and storage rights confirmed — may run
+ * RESTRICTED                   usable only under conditions (manual, limited scope) — not auto-run
+ * PENDING_REVIEW               official access exists, terms/plan under review — not run
+ * DISABLED_PENDING_COMPLIANCE  no confirmed permitted access method — not run
+ * DISABLED                     switched off / forbidden — not run
+ */
 export const COMPLIANCE_STATUSES = [
   "APPROVED",
+  "RESTRICTED",
   "PENDING_REVIEW",
   "DISABLED_PENDING_COMPLIANCE",
-  "BLOCKED",
+  "DISABLED",
 ] as const;
 export type ComplianceStatus = (typeof COMPLIANCE_STATUSES)[number];
 
@@ -13,6 +21,7 @@ export type ComplianceProfile = {
   status: ComplianceStatus;
   accessMethod: AccessMethod;
   termsUrl?: string;
+  /** Terms notes: what the reviewer must know about the provider's terms. */
   notes: string;
   /** Things the integration must never do. Documented per connector. */
   prohibitions: string[];
@@ -40,9 +49,10 @@ export type ConnectorGateDecision =
 
 const STRICTNESS: Record<ComplianceStatus, number> = {
   APPROVED: 0,
-  PENDING_REVIEW: 1,
-  DISABLED_PENDING_COMPLIANCE: 2,
-  BLOCKED: 3,
+  RESTRICTED: 1,
+  PENDING_REVIEW: 2,
+  DISABLED_PENDING_COMPLIANCE: 3,
+  DISABLED: 4,
 };
 
 /** The effective status is the stricter of code profile and org override. */
