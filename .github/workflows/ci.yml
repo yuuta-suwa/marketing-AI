@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - name: Database (migrations + RLS)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-16 postgresql-16-pgvector
+          PG_BIN=/usr/lib/postgresql/16/bin npm run test:db
+      - run: npm run build
+      - name: E2E (mobile viewport, demo mode)
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e

@@ -17,6 +17,16 @@ export type ClusterContext = {
   paySignalScore: number;
 };
 
+/** How the title frames each dominant signal type (labels, not claims). */
+const TITLE_FRAME: Partial<Record<SignalType, string>> = {
+  PAY_SIGNAL: "支払意思のある需要",
+  REQUEST: "未対応の要望",
+  SWITCHING: "乗換需要の受け皿",
+  WORKAROUND: "代替行動の置き換え",
+  SHORTAGE: "不足の解消",
+  CAPACITY_GAP: "待ち・満席の解消",
+};
+
 const REVENUE_HYPOTHESIS: Partial<Record<SignalType, string>> = {
   PAY_SIGNAL: "有料プラン / 従量課金（支払意思の表明あり — 価格受容性は未検証）",
   PRICE_GAP: "価格比較・代替調達による手数料モデル（仮説）",
@@ -67,7 +77,7 @@ export function draftOpportunityHeuristically(
   if (workarounds.length) provenance.currentAlternatives = "FACT";
 
   const draft: OpportunityDraft = {
-    title: `${label}の解消: ${cluster.name.split(": ")[1] ?? cluster.name}`.slice(0, 300),
+    title: `${cluster.name.split(": ")[1] ?? label} — ${TITLE_FRAME[cluster.dominantType] ?? `${label}の解消`}`.slice(0, 300),
     customer: customer ?? "未特定（顧客セグメントの調査が必要）",
     situation: representative.situation,
     pain: representative.problem,
