@@ -3,8 +3,10 @@ import { EStatConnector } from "./estat";
 import { GooglePlacesConnector } from "./google-places";
 import { processEnv, type EnvReader, type FetchLike } from "./http";
 import { ManualImportConnector } from "./manual-import";
+import { createMockFetch, markSynthetic, mockEnv } from "./mock";
 import { FUTURE_CONNECTORS, ScaffoldConnector } from "./scaffold";
 import { TripadvisorConnector } from "./tripadvisor";
+import { BraveSearchProvider } from "./search/brave";
 import { WebSearchConnector } from "./web-search";
 import { XConnector } from "./x";
 
@@ -30,17 +32,18 @@ export class StaticConnectorRegistry implements ConnectorRegistry {
 }
 
 export function createDefaultConnectorRegistry(
-  deps: { fetch?: FetchLike; env?: EnvReader } = {},
+  deps: { fetch?: FetchLike; env?: EnvReader; mock?: { fail?: string[] } } = {},
 ): ConnectorRegistry {
-  const f = deps.fetch ?? ((input, init) => fetch(input, init));
-  const env = deps.env ?? processEnv;
-  return new StaticConnectorRegistry([
+  const f = deps.mock ? createMockFetch(deps.mock) : (deps.fetch ?? ((input, init) => fetch(input, init)));
+  const env = deps.mock ? mockEnv(deps.env ?? processEnv) : (deps.env ?? processEnv);
+  const connectors: MarketConnector[] = [
     new ManualImportConnector(),
-    new WebSearchConnector(f, env),
+    new WebSearchConnector(new BraveSearchProvider(f, env)),
     new EStatConnector(f, env),
     new XConnector(f, env),
     new GooglePlacesConnector(f, env),
     new TripadvisorConnector(f, env),
     ...FUTURE_CONNECTORS.map((spec) => new ScaffoldConnector(spec)),
-  ]);
+  ];
+  return new StaticConnectorRegistry(deps.mock ? connectors.map(markSynthetic) : connectors);
 }

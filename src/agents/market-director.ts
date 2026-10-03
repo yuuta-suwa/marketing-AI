@@ -41,6 +41,9 @@ export async function parseDirective(
       budgetLimitUsd: rules.budgetLimitUsd,
       deepResearch: rules.deepResearch,
       sourcePreferences: rules.sourcePreferences,
+      ...(request.countries?.length ? { countries: rules.countries } : {}),
+      ...(request.languages?.length ? { languages: rules.languages } : {}),
+      ...(request.timeRangePreset ? { timeRange: rules.timeRange } : {}),
     });
     return { directive: merged, parser: "ai", usage: res.usage, costUsd: res.costUsd };
   } catch (e) {

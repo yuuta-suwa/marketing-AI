@@ -231,6 +231,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
               language: s.language ?? null,
               country: s.country ?? null,
               extracted_by: s.extractedBy,
+              field_provenance: s.fieldProvenance ?? {},
             })),
           )
           .select("id"),
@@ -487,6 +488,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
             duplicate_count: r.duplicateCount,
             duration_ms: r.durationMs,
             retry_count: r.retryCount,
+            cost_usd: r.costUsd ?? 0,
             error: r.error ?? null,
             started_at: r.startedAt,
             completed_at: r.completedAt,
@@ -495,6 +497,12 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
           .single(),
         "record connector run",
       );
+    },
+    async listRecentConnectorRuns(limit = 50) {
+      return must(
+        await db.from("connector_runs").select().eq("organization_id", org).order("started_at", { ascending: false }).limit(limit),
+        "recent connector runs",
+      ).map(mapConnectorRun);
     },
     async listConnectorRuns(runId) {
       return must(await db.from("connector_runs").select().eq("research_run_id", runId).order("started_at"), "list connector runs").map(mapConnectorRun);
@@ -547,12 +555,33 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
         : { id: null, weights: DEFAULT_SCORING_WEIGHTS };
     },
     async getConnectorSettings() {
-      const rows = must(await db.from("connectors").select("connector_key, enabled, compliance_status").eq("organization_id", org), "connector settings") as Array<Record<string, unknown>>;
+      const rows = must(await db.from("connectors").select("connector_key, enabled, compliance_status, terms_notes").eq("organization_id", org), "connector settings") as Array<Record<string, unknown>>;
       return rows.map((r) => ({
         connectorKey: r.connector_key as string,
         enabled: r.enabled as boolean,
         complianceStatus: r.compliance_status as never,
+        termsNotes: (r.terms_notes as string | null) ?? undefined,
       }));
+    },
+    async upsertConnectorSetting(input) {
+      must(
+        await db
+          .from("connectors")
+          .upsert(
+            {
+              organization_id: org,
+              connector_key: input.connectorKey,
+              display_name: input.displayName,
+              enabled: input.enabled,
+              compliance_status: input.complianceStatus,
+              terms_notes: input.termsNotes ?? null,
+            },
+            { onConflict: "organization_id,connector_key" },
+          )
+          .select("id")
+          .single(),
+        "upsert connector setting",
+      );
     },
     async audit(action, entityType, entityId, metadata) {
       const res = await db.rpc("record_audit_event", {

@@ -26,6 +26,7 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       MRO_DEMO_MODE: "true",
+      CONNECTOR_MOCK_MODE: "true",
       NEXT_PUBLIC_SUPABASE_URL: "",
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
       ANTHROPIC_API_KEY: "",

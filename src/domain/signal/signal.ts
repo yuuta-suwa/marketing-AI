@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ConfidenceLevelSchema } from "../shared/confidence";
+import { EpistemicStatusSchema } from "../shared/epistemic";
 
 export const SIGNAL_TYPES = [
   "PAIN",
@@ -64,6 +65,8 @@ export const MarketSignalSchema = z.object({
   signalType: SignalTypeSchema,
   evidenceIds: z.array(z.string().min(1)).min(1).max(50),
   confidence: ConfidenceLevelSchema,
+  /** Per-field epistemic status, e.g. { problem: "FACT", urgencyScore: "INFERENCE" }. */
+  fieldProvenance: z.record(z.string(), EpistemicStatusSchema).optional(),
 });
 export type MarketSignal = z.infer<typeof MarketSignalSchema>;
 

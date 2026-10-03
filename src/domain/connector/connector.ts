@@ -31,6 +31,10 @@ export type ConnectorContext = {
   signal?: AbortSignal;
   /** Manual import payload (ManualImportConnector only). */
   manualItems?: RawSourceItem[];
+  /** User-supplied page URLs to import (ManualImportConnector only). */
+  manualUrls?: string[];
+  /** Non-fatal problems (e.g. one URL failed); the run is marked PARTIAL for this connector. */
+  warn?: (message: string) => void;
   logger?: { info: (msg: string, data?: Record<string, unknown>) => void };
 };
 

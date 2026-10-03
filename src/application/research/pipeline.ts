@@ -7,7 +7,7 @@ import type { Evidence } from "@/domain/evidence/evidence";
 import type { ResearchRunStats } from "@/domain/research/run";
 import { isTerminalRunStatus, type ResearchRunStatus } from "@/domain/research/run-state-machine";
 import { deduplicate } from "@/domain/source/dedup";
-import { normalizeSourceItem } from "@/domain/source/normalize";
+import { enrichLocale, normalizeSourceItem } from "@/domain/source/normalize";
 import type { RawSourceItem, SourceItem } from "@/domain/source/source-item";
 import { DomainError } from "@/domain/shared/errors";
 import { collectSources } from "./collect";
@@ -32,7 +32,7 @@ export type PipelineResult = {
 export async function runResearchPipeline(
   ctx: AppContext,
   runId: string,
-  input: { manualItems?: RawSourceItem[] } = {},
+  input: { manualItems?: RawSourceItem[]; manualUrls?: string[] } = {},
 ): Promise<PipelineResult> {
   authorize(ctx.actor, "research.create");
   const log = ctx.logger.child({ research_run_id: runId, organization_id: ctx.actor.organizationId });
@@ -72,6 +72,7 @@ export async function runResearchPipeline(
       runId,
       directive,
       manualItems: input.manualItems,
+      manualUrls: input.manualUrls,
       settings,
       budget,
     });
@@ -94,13 +95,13 @@ export async function runResearchPipeline(
     await move("NORMALIZING");
     const retrievedAt = ctx.clock.now().toISOString();
     const normalized = collected.map(({ item, connectorId }) =>
-      normalizeSourceItem(item, {
+      enrichLocale(normalizeSourceItem(item, {
         researchRunId: runId,
         connectorId,
         retrievedAt,
         complianceStatus: connectorId === "manual_import" ? "MANUAL_UPLOAD" : "APPROVED",
         hash: ctx.hash,
-      }),
+      }), directive),
     );
     const existing = await ctx.repos.evidence.listSourceItems(runId);
     const { unique, duplicates } = deduplicate(normalized, { existing });

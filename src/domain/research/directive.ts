@@ -52,7 +52,13 @@ export const ResearchRequestSchema = z.object({
   deepResearch: z.boolean().optional(),
   maxItems: z.number().int().min(1).max(500).optional(),
   budgetLimitUsd: z.number().min(0).max(1000).optional(),
-  sourcePreferences: z.array(z.string()).optional(),
+  sourcePreferences: z.array(z.string().regex(/^[a-z0-9_]{2,64}$/)).max(30).optional(),
+  /** Advanced overrides — when present they win over parsed values. */
+  countries: z.array(z.string().regex(/^[A-Z]{2}$|^GLOBAL$/)).max(30).optional(),
+  languages: z.array(z.string().regex(/^[a-z]{2}$/)).max(20).optional(),
+  timeRangePreset: z.enum(["7d", "30d", "90d", "1y", "all"]).optional(),
+  /** Pages the user asks to import (fetched server-side, robots.txt respected). */
+  manualUrls: z.array(z.url({ protocol: /^https?$/ })).max(20).optional(),
   manualItems: z
     .array(
       z.object({

@@ -5,6 +5,7 @@ import { OpportunityCard } from "@/components/opportunity-card";
 import { RunPoller } from "@/components/run-poller";
 import { Card, EmptyState, Notice, PageHeader, SectionTitle } from "@/components/ui";
 import { RUN_TYPE_LABEL_JA } from "@/domain/research/run";
+import { SIGNAL_TYPE_LABEL_JA } from "@/domain/signal/signal";
 import { RESEARCH_RUN_STATUSES, isTerminalRunStatus } from "@/domain/research/run-state-machine";
 import { orNotFound, pageContext } from "@/lib/page-context";
 
@@ -34,6 +35,7 @@ export default async function RunDetailPage({ params }: PageProps<"/research/run
           ))}
         </ol>
       ) : null}
+      <p className="mb-3 text-sm"><span className="text-muted">Objective: </span>{d.directive?.objective ?? "—"}</p>
       {d.run.statusReason ? <Notice tone={d.run.status === "FAILED" ? "error" : "warn"}>{d.run.statusReason}</Notice> : null}
       {d.run.opportunityId ? (
         <p className="mt-2 text-sm"><Link className="underline" href={`/opportunities/${d.run.opportunityId}`}>元の事業機会へ戻る</Link></p>
@@ -42,15 +44,27 @@ export default async function RunDetailPage({ params }: PageProps<"/research/run
       <SectionTitle>Summary</SectionTitle>
       <Card>
         <dl className="grid grid-cols-3 gap-3 text-center text-sm">
-          <Stat k="Source" v={d.run.stats.sourceItems} />
+          <Stat k="Items Collected" v={d.sourceItemCount} />
           <Stat k="重複除外" v={d.run.stats.duplicates} />
           <Stat k="Evidence" v={d.evidenceCount} />
           <Stat k="Signal" v={d.run.stats.signals} />
           <Stat k="Cluster" v={d.run.stats.clusters} />
           <Stat k="Opportunity" v={d.run.stats.opportunities} />
         </dl>
-        <p className="mt-3 text-xs text-muted">コスト ${d.run.costUsd.toFixed(4)} / 上限 ${d.run.budgetLimitUsd.toFixed(2)}</p>
+        <p className="mt-3 text-xs text-muted">Estimated Cost ${d.estimatedCostUsd.toFixed(4)} / 上限 ${d.run.budgetLimitUsd.toFixed(2)}</p>
+        {d.runningAgents.length > 0 ? (
+          <p className="mt-1 text-xs" data-testid="agents-running">Agents Running: {d.runningAgents.map((a) => a.agentName).join(", ")}</p>
+        ) : null}
       </Card>
+
+      {d.errors.length > 0 ? (
+        <>
+          <SectionTitle>Errors</SectionTitle>
+          <ul className="space-y-1 text-xs text-red-700 dark:text-red-300" data-testid="run-errors">
+            {d.errors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </>
+      ) : null}
 
       {d.directive ? (
         <>
@@ -74,9 +88,49 @@ export default async function RunDetailPage({ params }: PageProps<"/research/run
             <li key={c.connectorKey} className="rounded-xl border border-line bg-surface px-3 py-2 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono text-xs">{c.connectorKey}</span>
-                <span className={c.status === "FAILED" ? "text-red-600" : c.status === "SKIPPED" ? "text-muted" : "text-emerald-600"}>{c.status} · {c.resultCount}件 · {c.durationMs}ms</span>
+                <span className={c.status === "FAILED" ? "text-red-600" : c.status === "SKIPPED" ? "text-muted" : "text-emerald-600"}>{c.status} · {c.resultCount}件 · {c.durationMs}ms{c.retryCount ? ` · retry ${c.retryCount}` : ""}{c.costUsd ? ` · $${c.costUsd.toFixed(4)}` : ""}</span>
               </div>
               {c.error ? <p className="mt-1 text-xs text-muted">{c.error}</p> : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <SectionTitle hint={`${d.signals.length}件`}>Market Signals</SectionTitle>
+      {d.signals.length === 0 ? <EmptyState>{active ? "抽出中…" : "シグナルなし"}</EmptyState> : (
+        <ul className="space-y-2" data-testid="signal-list">
+          {d.signals.slice(0, 30).map((s) => (
+            <li key={s.id} className="rounded-xl border border-line bg-surface p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Tag>{SIGNAL_TYPE_LABEL_JA[s.signalType]}</Tag>
+                <ConfidenceBadge level={s.confidence} />
+                <span className="text-[11px] text-muted">緊急度 {s.urgencyScore} · 頻度 {s.frequencySignal} · 支払意思 {s.willingnessToPayScore} · 乗換 {s.switchingIntentScore}</span>
+              </div>
+              <p className="mt-1">{s.problem}</p>
+              <p className="mt-1 text-[11px] text-muted">
+                {s.trustIssue ? "信頼 " : ""}{s.priceIssue ? "価格 " : ""}{s.accessIssue ? "アクセス " : ""}Evidence {s.evidenceIds.length} · {s.extractedBy}
+                {s.fieldProvenance?.problem ? ` · problem=${s.fieldProvenance.problem}` : ""}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <SectionTitle hint={`${d.sourceItemCount}件`}>Sources</SectionTitle>
+      {d.sourceItems.length === 0 ? <EmptyState>{active ? "収集中…" : "ソースなし"}</EmptyState> : (
+        <ul className="space-y-1.5" data-testid="source-list">
+          {d.sourceItems.map((s) => (
+            <li key={s.id} className="rounded-xl border border-line bg-surface px-3 py-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate font-semibold">{s.title ?? s.sourceName}</span>
+                {s.metadata?.synthetic ? <Tag>MOCK</Tag> : <Tag>{s.sourceType}</Tag>}
+              </div>
+              <p className="mt-0.5 line-clamp-2 text-muted">{s.body}</p>
+              <p className="mt-0.5 text-muted">
+                {s.sourceName} · {s.language ?? "?"}/{s.country ?? "?"}
+                {s.publishedAt ? ` · ${new Date(s.publishedAt).toLocaleDateString("ja-JP")}` : ""}
+                {s.sourceUrl ? <> · <a className="underline" href={s.sourceUrl} target="_blank" rel="noopener noreferrer nofollow">link</a></> : null}
+              </p>
             </li>
           ))}
         </ul>

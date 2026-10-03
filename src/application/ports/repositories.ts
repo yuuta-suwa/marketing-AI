@@ -171,6 +171,7 @@ export type ConnectorRunRecord = {
   durationMs: number;
   retryCount: number;
   error?: string;
+  costUsd?: number;
   startedAt: string;
   completedAt: string;
 };
@@ -179,6 +180,7 @@ export type ConnectorSetting = {
   connectorKey: string;
   enabled: boolean;
   complianceStatus: ComplianceStatus;
+  termsNotes?: string;
 };
 
 export type OrgBudget = { perRunUsd: number; dailyUsd: number; monthlyUsd: number };
@@ -206,12 +208,16 @@ export interface OpsRepository {
   listAgentRuns(filter: { runId?: string; opportunityId?: string; limit?: number }): Promise<AgentRunRecord[]>;
   recordConnectorRun(record: ConnectorRunRecord): Promise<void>;
   listConnectorRuns(runId: string): Promise<ConnectorRunRecord[]>;
+  /** Most recent connector executions across runs (observability). */
+  listRecentConnectorRuns(limit?: number): Promise<ConnectorRunRecord[]>;
   recordCost(entry: CostEntry): Promise<void>;
   spendSince(since: Date): Promise<number>;
   spendByRun(runId: string): Promise<number>;
   getBudget(): Promise<OrgBudget>;
   getScoringWeights(): Promise<{ id: string | null; weights: ScoringWeights }>;
   getConnectorSettings(): Promise<ConnectorSetting[]>;
+  /** Admin: enable/disable a connector or make its compliance status stricter. */
+  upsertConnectorSetting(input: ConnectorSetting & { displayName: string; termsNotes?: string }): Promise<void>;
   audit(action: string, entityType: string, entityId?: string, metadata?: Record<string, unknown>): Promise<void>;
 }
 

@@ -58,12 +58,19 @@ export async function requireSession(): Promise<Session> {
   return session;
 }
 
+/** Mock connectors are allowed only in demo mode, never with real tenants/data. */
+export function connectorMockOptions(mode: Session["mode"]): { fail?: string[] } | undefined {
+  if (mode !== "demo" || process.env.CONNECTOR_MOCK_MODE !== "true") return undefined;
+  const fail = (process.env.CONNECTOR_MOCK_FAIL ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return { fail };
+}
+
 export function buildAppContext(session: Session): AppContext {
   const fallback = new LocalHashEmbeddingProvider();
   return {
     actor: session.actor,
     repos: session.repos,
-    connectors: createDefaultConnectorRegistry(),
+    connectors: createDefaultConnectorRegistry({ mock: connectorMockOptions(session.mode) }),
     ai: createAIProvider(),
     embeddings: createEmbeddingProvider(),
     fallbackEmbeddings: fallback,

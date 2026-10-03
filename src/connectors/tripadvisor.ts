@@ -1,5 +1,6 @@
 import type { ComplianceProfile } from "@/domain/compliance/compliance";
 import type { ConnectorContext, ConnectorHealth, MarketConnector } from "@/domain/connector/connector";
+import type { CostEstimate } from "@/domain/cost/cost";
 import type { ResearchDirective } from "@/domain/research/directive";
 import type { RawSourceItem } from "@/domain/source/source-item";
 import { buildQuery, fetchJson, isoOrUndefined, processEnv, type EnvReader, type FetchLike } from "./http";
@@ -85,5 +86,9 @@ export class TripadvisorConnector implements MarketConnector {
       notes: "Content APIは自社サイトでの表示用途が前提。分析目的の保存はTripadvisorの許諾確認後に有効化。",
       prohibitions: ["Tripadvisorサイトのスクレイピング", "帰属表示の削除"],
     };
+  }
+
+  async estimateCost(): Promise<CostEstimate> {
+    return { amountUsd: 0, basis: "Content API free tier (quota-limited)" };
   }
 }

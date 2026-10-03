@@ -37,6 +37,16 @@ export function extractSignalsHeuristically(
       signalType: primary,
       evidenceIds: [e.id],
       confidence: "LOW",
+      fieldProvenance: {
+        problem: "FACT",
+        signalType: "INFERENCE",
+        urgencyScore: "INFERENCE",
+        frequencySignal: "INFERENCE",
+        willingnessToPayScore: "INFERENCE",
+        switchingIntentScore: "INFERENCE",
+        persona: "ASSUMPTION",
+        category: "ASSUMPTION",
+      },
     });
   }
   return out;

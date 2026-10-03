@@ -14,6 +14,7 @@ Hard rules:
 - Scores are 0-100 integers reflecting what the text supports, not what you imagine.
 - confidence: LOW unless several independent excerpts agree.
 - signalType must be one of: ${SIGNAL_TYPES.join(", ")}.
+- fieldProvenance: label each field you fill as FACT (stated verbatim in the evidence), INFERENCE (derived) or HYPOTHESIS.
 - Skip excerpts that contain no problem, request, workaround, switching, shortage or payment intent.
 Respond with JSON {"signals": [...]}.`;
 

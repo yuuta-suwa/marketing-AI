@@ -21,7 +21,8 @@ test("mobile critical scenario: research → opportunities → evidence → red 
 
   // 2. Research input
   await page.goto("/research/new");
-  await page.getByLabel("何を調べますか？").fill("旅行市場の不満から新規事業を探す");
+  await page.getByLabel("何を調べたいですか？").fill("旅行市場の不満から新規事業を探す");
+  await page.getByText("手動インポート（テキスト・URL・CSV）").click();
   await page.locator('textarea[name="manual"]').fill(MANUAL);
   await page.getByRole("button", { name: "調査を開始" }).click();
 

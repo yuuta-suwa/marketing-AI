@@ -5,6 +5,7 @@ const TABS = [
   ["/settings/scoring", "Scoring"],
   ["/settings/costs", "Costs"],
   ["/settings/security", "Security"],
+  ["/settings/observability", "Logs"],
 ] as const;
 
 export function SettingsNav() {

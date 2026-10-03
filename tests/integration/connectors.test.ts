@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultConnectorRegistry } from "@/connectors/registry";
 import { EStatConnector } from "@/connectors/estat";
 import { WebSearchConnector } from "@/connectors/web-search";
+import { BraveSearchProvider } from "@/connectors/search/brave";
 import { XConnector } from "@/connectors/x";
 import { GooglePlacesConnector } from "@/connectors/google-places";
 import { ConnectorError } from "@/domain/connector/connector";
@@ -37,8 +38,8 @@ describe("connector compliance defaults", () => {
   });
 
   it("web search / X need an explicit operator confirmation to become APPROVED", () => {
-    expect(new WebSearchConnector(json({}), env({ BRAVE_SEARCH_API_KEY: "k" })).complianceStatus().status).toBe("PENDING_REVIEW");
-    expect(new WebSearchConnector(json({}), env({ BRAVE_SEARCH_API_KEY: "k", WEB_SEARCH_STORAGE_RIGHTS_CONFIRMED: "true" })).complianceStatus().status).toBe("APPROVED");
+    expect(new WebSearchConnector(new BraveSearchProvider(json({}), env({ BRAVE_SEARCH_API_KEY: "k" }))).complianceStatus().status).toBe("PENDING_REVIEW");
+    expect(new WebSearchConnector(new BraveSearchProvider(json({}), env({ BRAVE_SEARCH_API_KEY: "k", WEB_SEARCH_STORAGE_RIGHTS_CONFIRMED: "true" }))).complianceStatus().status).toBe("APPROVED");
     expect(new XConnector(json({}), env({ X_TERMS_CONFIRMED: "true" })).complianceStatus().status).toBe("APPROVED");
   });
 
@@ -55,7 +56,7 @@ describe("adapters normalize provider responses (mocked HTTP)", () => {
       calledUrl = url;
       return new Response(JSON.stringify({ web: { results: [{ url: "https://ex.com/a", title: "T", description: "空港の移動が不便", extra_snippets: ["困った"] }] } }));
     };
-    const items = await new WebSearchConnector(fetchImpl, env({ BRAVE_SEARCH_API_KEY: "k" })).search(directive, ctx);
+    const items = await new WebSearchConnector(new BraveSearchProvider(fetchImpl, env({ BRAVE_SEARCH_API_KEY: "k" }))).search(directive, ctx);
     expect(calledUrl).toContain("api.search.brave.com");
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ sourceType: "WEB", sourceName: "ex.com", body: "空港の移動が不便\n困った" });
@@ -85,15 +86,15 @@ describe("adapters normalize provider responses (mocked HTTP)", () => {
   });
 
   it("HTTP 429 / 5xx are retryable connector errors, 4xx are not", async () => {
-    const c429 = new WebSearchConnector(json({}, 429), env({ BRAVE_SEARCH_API_KEY: "k" }));
+    const c429 = new WebSearchConnector(new BraveSearchProvider(json({}, 429), env({ BRAVE_SEARCH_API_KEY: "k" })));
     await expect(c429.search(directive, ctx)).rejects.toMatchObject({ retryable: true, status: 429 });
-    const c401 = new WebSearchConnector(json({}, 401), env({ BRAVE_SEARCH_API_KEY: "k" }));
+    const c401 = new WebSearchConnector(new BraveSearchProvider(json({}, 401), env({ BRAVE_SEARCH_API_KEY: "k" })));
     await expect(c401.search(directive, ctx)).rejects.toMatchObject({ retryable: false, status: 401 });
   });
 
   it("adapters without credentials return nothing instead of calling out", async () => {
     let called = false;
-    const items = await new WebSearchConnector(async () => { called = true; return new Response("{}"); }, env({})).search(directive, ctx);
+    const items = await new WebSearchConnector(new BraveSearchProvider(async () => { called = true; return new Response("{}"); }, env({}))).search(directive, ctx);
     expect(items).toEqual([]);
     expect(called).toBe(false);
   });

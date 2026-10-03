@@ -1,5 +1,6 @@
 import type { ComplianceProfile } from "@/domain/compliance/compliance";
 import type { ConnectorContext, ConnectorHealth, MarketConnector } from "@/domain/connector/connector";
+import type { CostEstimate } from "@/domain/cost/cost";
 import type { ResearchDirective } from "@/domain/research/directive";
 import type { RawSourceItem } from "@/domain/source/source-item";
 import { fetchJson, processEnv, type EnvReader, type FetchLike } from "./http";
@@ -106,5 +107,9 @@ export class EStatConnector implements MarketConnector {
       notes: "公式API。利用時はクレジット表示（出典：政府統計の総合窓口(e-Stat)）が必要。",
       prohibitions: ["API利用規約に反する大量リクエスト"],
     };
+  }
+
+  async estimateCost(): Promise<CostEstimate> {
+    return { amountUsd: 0, basis: "e-Stat API is free (attribution required)" };
   }
 }

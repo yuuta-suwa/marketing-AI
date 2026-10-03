@@ -1,5 +1,6 @@
 import { listConnectorStatus } from "@/application/queries";
 import { Tag } from "@/components/badges";
+import { ConnectorSettingForm } from "@/components/forms/connector-setting-form";
 import { Card, PageHeader } from "@/components/ui";
 import { pageContext } from "@/lib/page-context";
 import { SettingsNav } from "../nav";
@@ -44,6 +45,10 @@ export default async function ConnectorsPage() {
                 </ul>
               ) : null}
               {c.profile.termsUrl ? <a href={c.profile.termsUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-[11px] underline">利用規約</a> : null}
+              {c.termsNotes ? <p className="mt-1 text-[11px]">組織メモ: {c.termsNotes}</p> : null}
+              {c.canConfigure && c.id !== "manual_import" ? (
+                <ConnectorSettingForm connectorKey={c.id} enabled={c.enabled} compliance={c.compliance} allowedStatuses={c.allowedStatuses} termsNotes={c.termsNotes} />
+              ) : null}
             </Card>
           </li>
         ))}

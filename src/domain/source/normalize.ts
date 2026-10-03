@@ -100,3 +100,22 @@ export function normalizeSourceItem(
     complianceStatus: ctx.complianceStatus,
   };
 }
+
+/**
+ * Fills locale gaps after normalization. Detected/inferred values are
+ * flagged in metadata so they are never mistaken for source-provided facts.
+ */
+export function enrichLocale(item: NewSourceItem, directive: { countries: readonly string[] }): NewSourceItem {
+  const metadata = { ...(item.metadata ?? {}) };
+  let { language, country } = item;
+  if (!language) {
+    language = /[\u3040-\u30ff]/.test(item.body) ? "ja" : /[\u4e00-\u9fff]/.test(item.body) ? "zh" : /^[\x00-\x7F\s]+$/.test(item.body) ? "en" : undefined;
+    if (language) metadata.languageDetected = true;
+  }
+  const specific = directive.countries.filter((c) => c !== "GLOBAL");
+  if (!country && specific.length === 1) {
+    country = specific[0];
+    metadata.countryInferred = true;
+  }
+  return { ...item, language, country, metadata };
+}

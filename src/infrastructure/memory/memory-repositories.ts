@@ -320,6 +320,13 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
     async recordConnectorRun(record) {
       db.connectorRuns.push({ ...record, organizationId: org });
     },
+    async listRecentConnectorRuns(limit = 50) {
+      return db.connectorRuns
+        .filter((r) => r.organizationId === org)
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .slice(0, limit)
+        .map(strip);
+    },
     async listConnectorRuns(runId) {
       return db.connectorRuns.filter((r) => r.organizationId === org && r.researchRunId === runId).map(strip);
     },
@@ -341,6 +348,11 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
     },
     async getConnectorSettings() {
       return db.connectorSettings.get(org) ?? [];
+    },
+    async upsertConnectorSetting(input) {
+      const rest = (db.connectorSettings.get(org) ?? []).filter((s) => s.connectorKey !== input.connectorKey);
+      rest.push({ connectorKey: input.connectorKey, enabled: input.enabled, complianceStatus: input.complianceStatus, termsNotes: input.termsNotes });
+      db.connectorSettings.set(org, rest);
     },
     async audit(action, entityType, entityId, metadata) {
       db.audit.push({ organizationId: org, actorId: actor.userId, action, entityType, entityId, metadata, createdAt: now() });

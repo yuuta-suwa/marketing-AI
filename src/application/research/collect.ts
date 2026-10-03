@@ -12,6 +12,7 @@ export type ConnectorOutcome = {
   items: RawSourceItem[];
   error?: string;
   retryCount: number;
+  costUsd?: number;
 };
 
 /** Which connectors a run should consider. */
@@ -23,7 +24,9 @@ export function selectConnectors(
   const preferred = new Set(directive.sourcePreferences);
   return all.filter((c) => {
     if (c.id === "manual_import") return hasManualItems;
-    return preferred.size === 0 || preferred.has(c.id);
+    if (preferred.size > 0) return preferred.has(c.id);
+    // Scaffolds without any permitted access method are never candidates by default.
+    return c.complianceStatus().status !== "DISABLED_PENDING_COMPLIANCE";
   });
 }
 
@@ -53,12 +56,17 @@ export async function collectSources(
     runId: string;
     directive: ResearchDirective;
     manualItems?: RawSourceItem[];
+    manualUrls?: string[];
     settings: ConnectorSetting[];
     budget: BudgetTracker;
   },
 ): Promise<ConnectorOutcome[]> {
   const settings = new Map(input.settings.map((s) => [s.connectorKey, s]));
-  const candidates = selectConnectors(ctx.connectors.list(), input.directive, (input.manualItems?.length ?? 0) > 0);
+  const candidates = selectConnectors(
+    ctx.connectors.list(),
+    input.directive,
+    (input.manualItems?.length ?? 0) + (input.manualUrls?.length ?? 0) > 0,
+  );
   const perConnectorLimit = Math.max(1, Math.ceil(input.directive.maxItems / Math.max(1, candidates.length)));
 
   return Promise.all(
@@ -76,6 +84,7 @@ export async function collectSources(
           durationMs: completed.getTime() - started.getTime(),
           retryCount: outcome.retryCount,
           error: outcome.error,
+          costUsd: outcome.costUsd ?? 0,
           startedAt: started.toISOString(),
           completedAt: completed.toISOString(),
         });
@@ -92,6 +101,7 @@ export async function collectSources(
           result_count: outcome.items.length,
           retry_count: outcome.retryCount,
           duration_ms: completed.getTime() - started.getTime(),
+          cost_usd: outcome.costUsd ?? 0,
           error: outcome.error,
         });
         return outcome;
@@ -116,6 +126,7 @@ export async function collectSources(
       }
 
       let retryCount = 0;
+      const warnings: string[] = [];
       for (;;) {
         const controller = new AbortController();
         try {
@@ -126,6 +137,8 @@ export async function collectSources(
               limit: connector.id === "manual_import" ? input.directive.maxItems : perConnectorLimit,
               signal: controller.signal,
               manualItems: input.manualItems,
+              manualUrls: input.manualUrls,
+              warn: (message) => warnings.push(message),
             }),
             ctx.options.connectorTimeoutMs,
             controller,
@@ -148,12 +161,14 @@ export async function collectSources(
             if (parsed.success) valid.push(parsed.data);
             else invalid++;
           }
+          if (invalid > 0) warnings.push(`${invalid} item(s) failed validation`);
           return finish({
             connector,
-            status: invalid > 0 ? "PARTIAL" : "SUCCESS",
+            status: warnings.length > 0 ? "PARTIAL" : "SUCCESS",
             items: valid,
-            error: invalid > 0 ? `${invalid} item(s) failed validation` : undefined,
+            error: warnings.length > 0 ? warnings.join(" / ").slice(0, 2000) : undefined,
             retryCount,
+            costUsd: estimate,
           });
         } catch (e) {
           const retryable = e instanceof ConnectorError ? e.retryable : true;

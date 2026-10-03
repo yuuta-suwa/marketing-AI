@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-10-03 · Milestone 1 complete.
+Last updated: 2026-10-03 · Milestone 2 complete.
 
 ## Repository audit (start of M1)
 
@@ -11,7 +11,7 @@ The repository was empty (no commits, no files). Everything below was built from
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Audit, architecture, Supabase schema, RLS, auth, domain models | ✅ done |
-| 2 | Directive, run state machine, connector interface, manual, web search, e-Stat, evidence | ✅ done (web search / e-Stat adapters need credentials to run live) |
+| 2 | Directive, run state machine, connector interface, manual (text/URL/CSV), web search (provider adapter), e-Stat, evidence | ✅ done — live runs need credentials; mock mode for demo/E2E |
 | 3 | Signal extraction, embeddings, clustering, opportunity, scoring | ✅ MVP (deterministic + Anthropic LLM path; local embeddings) |
 | 4 | Competition, market size, business model, CFO, Red Team | 🟡 Red Team done; others M2 |
 | 5 | Mobile dashboard, opportunity detail, research UI | ✅ MVP |
@@ -29,7 +29,7 @@ The repository was empty (no commits, no files). Everything below was built from
 | Login | ✅ | Supabase email/password + callback; demo mode for local |
 | Japanese research instruction | ✅ | rule + AI directive parser |
 | ResearchRun creation | ✅ | |
-| ≥2 working connectors | 🟡 | Manual Import runs; Web Search + e-Stat (+X) adapters are implemented and tested with mocked HTTP — need `BRAVE_SEARCH_API_KEY`(+confirmation) / `ESTAT_APP_ID` to run live |
+| ≥2 working connectors | ✅ (mock) / 🟡 (live) | Manual Import runs live; Web Search, e-Stat, X run end-to-end in mock mode; live requires `BRAVE_SEARCH_API_KEY`(+confirmation) / `ESTAT_APP_ID` |
 | SourceItem normalization | ✅ | |
 | Deduplication | ✅ | external id / hash / canonical url / semantic hook |
 | Evidence storage | ✅ | verbatim, DB-enforced |
