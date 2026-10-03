@@ -6,7 +6,12 @@ import type {
   StoredCluster,
   StoredDecision,
   StoredRedTeamReview,
+  StoredAdvisorSession,
   StoredBusinessModel,
+  StoredFeedback,
+  StoredNotification,
+  StoredReport,
+  StoredWatchlist,
   StoredCompetitor,
   StoredMarketEstimate,
   StoredScore,
@@ -52,4 +57,9 @@ export class MemoryDatabase {
   businessModels = new Map<string, Scoped<StoredBusinessModel>>();
   experiments = new Map<string, Scoped<Experiment>>();
   opportunityEvidenceSource = new Map<string, string>();
+  advisorSessions = new Map<string, Scoped<StoredAdvisorSession>>();
+  reports = new Map<string, Scoped<StoredReport>>();
+  watchlists = new Map<string, StoredWatchlist>();
+  notifications = new Map<string, Scoped<StoredNotification> & { dedupeKey?: string }>();
+  feedback = new Map<string, Scoped<StoredFeedback>>();
 }

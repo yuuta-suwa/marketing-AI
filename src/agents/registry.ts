@@ -27,7 +27,8 @@ export const AGENTS: readonly AgentDefinition[] = [
   { name: "BusinessModelAgent", role: "収益モデル候補の評価（SaaS偏重を避ける）", status: "ACTIVE", milestone: "M3" },
   { name: "CFOAgent", role: "単価・粗利・CAC・LTV・回収期間をFACT/ASSUMPTION/CALCULATIONで推定", status: "ACTIVE", milestone: "M3" },
   { name: "ComplianceAgent", role: "Connector・データ利用・規制リスクのレビュー", status: "PLANNED", milestone: "M3" },
-  { name: "ReporterAgent", role: "Daily Market Brief・レポート生成", status: "PLANNED", milestone: "M3" },
+  { name: "AdvisorCouncil", role: "8つの分析視点で事業機会を評価し、FRIDAYが合意・対立・未解決の問い・重要な前提・必要な証拠を統合", status: "ACTIVE", milestone: "M4" },
+  { name: "ReporterAgent", role: "Daily Market Brief・レポート生成", status: "ACTIVE", milestone: "M4" },
 ];
 
 export const DEFAULT_MAX_CALLS_PER_AGENT = 12;

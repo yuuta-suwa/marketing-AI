@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { computeDailyBrief } from "@/application/executive/daily-brief";
 import { getDashboard } from "@/application/queries";
 import { RunStatusPill, Tag } from "@/components/badges";
 import { OpportunityCard } from "@/components/opportunity-card";
@@ -10,7 +11,12 @@ import { pageContext } from "@/lib/page-context";
 export const metadata = { title: "ダッシュボード" };
 
 export default async function DashboardPage() {
-  const d = await getDashboard(await pageContext());
+  const ctx = await pageContext();
+  const [d, brief, alerts] = await Promise.all([
+    getDashboard(ctx),
+    computeDailyBrief(ctx),
+    ctx.repos.executive.listNotifications({ unreadOnly: true, limit: 5 }),
+  ]);
   return (
     <>
       <PageHeader title="Market Radar" subtitle="今日の市場シグナルと事業機会" />
@@ -21,6 +27,20 @@ export default async function DashboardPage() {
           <input name="q" placeholder="例: 日本の旅行市場の不満から新規事業を探して" className="min-h-11 min-w-0 flex-1 rounded-xl border border-line bg-bg px-3 text-sm" />
           <button className="min-h-11 rounded-xl bg-accent px-4 text-sm font-semibold text-white">調査</button>
         </form>
+      </Card>
+
+      <div id="brief" />
+      <SectionTitle hint={brief.periodEnd.slice(0, 10)}>Daily Market Brief</SectionTitle>
+      <Card>
+        {brief.meaningful ? (
+          <ul className="space-y-1 text-sm" data-testid="daily-brief">
+            <li>新規シグナル <b>{brief.newSignals}</b>件 · 強い痛み {brief.highSignalPains.length} · 支払意思 {brief.paySignals.length} · 乗換 {brief.switchingSignals.length}</li>
+            {brief.highSignalPains.slice(0, 3).map((p) => <li key={p.id} className="text-xs">[{p.type}] {p.problem}</li>)}
+            {brief.fastRisingClusters.length ? <li className="text-xs">急上昇: {brief.fastRisingClusters.map((c) => c.name).join("、")}</li> : null}
+            {brief.marketChanges.length ? <li className="text-xs">価格・規制: {brief.marketChanges.map((m) => m.problem.slice(0, 30)).join(" / ")}</li> : null}
+            {brief.pendingDecisions.length ? <li className="text-xs">CEO判断待ち {brief.pendingDecisions.length}件</li> : null}
+          </ul>
+        ) : <p className="text-sm text-muted" data-testid="daily-brief">直近24時間に意味のある変化はありません（通知は送りません）。</p>}
       </Card>
 
       <SectionTitle hint={<Link href="/opportunities">すべて</Link>}>Top Opportunities</SectionTitle>
@@ -46,8 +66,12 @@ export default async function DashboardPage() {
       <SectionTitle>Pay Signals</SectionTitle>
       <SignalList signals={d.paySignals} empty="支払意思シグナルは未検出" />
 
-      <SectionTitle>Watchlist Alerts</SectionTitle>
-      <EmptyState>Watchlist監視は Milestone 3 で提供予定</EmptyState>
+      <SectionTitle hint={<Link href="/watchlists">管理</Link>}>Watchlist Alerts</SectionTitle>
+      {alerts.length === 0 ? <EmptyState>未読の通知はありません</EmptyState> : (
+        <ul className="space-y-1.5 text-sm">
+          {alerts.map((n) => <li key={n.id} className="rounded-xl border border-accent bg-surface p-2"><Link href={n.link ?? "/watchlists"} className="font-semibold underline">{n.title}</Link>{n.body ? <p className="text-xs">{n.body}</p> : null}</li>)}
+        </ul>
+      )}
 
       <SectionTitle hint={<Link href="/research/runs">すべて</Link>}>Recent Research</SectionTitle>
       {d.recentRuns.length === 0 ? <EmptyState>調査履歴はありません</EmptyState> : (

@@ -8,7 +8,7 @@
 | Org A cannot read Org B | `private.is_org_member` in every policy; composite FKs block cross-tenant links | `npm run test:db` |
 | Roles | viewer < member < admin < owner from `organization_members` | DB tests + `authorization` unit tests |
 | `user_metadata` not used for authorization | roles only from `organization_members`; metadata used only for display name at signup | code review, `server-context.ts` |
-| service_role never in frontend | not used by the web app; only `NEXT_PUBLIC_SUPABASE_URL` + publishable key are public | `.env.example`, grep |
+| service_role never in frontend | used only by `/api/cron/*` system jobs (server-only module, `CRON_SECRET` bearer, constant-time compare); every system query is scoped to an organization and opportunity reads are re-checked against the watchlist's org | `.env.example`, grep, E2E 401 test |
 | No secrets in `NEXT_PUBLIC_*` | connector/AI keys read server-side only (`server-only` modules) | build |
 | anon has no table access | `revoke all ... from anon` | DB tests |
 | Human decisions attributable | `decisions.decided_by = auth.uid()` in RLS | DB tests |
@@ -24,7 +24,7 @@
 
 - Supabase Auth enforces its own auth rate limits.
 - Research cost is bounded per run/day/month by the budget (a natural limiter for expensive work).
-- A per-user request rate limiter for server actions is **planned for M3** (Supabase table or edge KV based). Listed in Known limitations.
+- Per-user rate limiting for expensive server actions: see Final QA (RELEASE notes).
 
 ## Security-definer functions
 

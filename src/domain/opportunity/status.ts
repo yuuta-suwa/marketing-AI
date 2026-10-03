@@ -89,3 +89,22 @@ export const OPPORTUNITY_STATUS_LABEL_JA: Record<OpportunityStatus, string> = {
   REJECTED: "却下",
   LAUNCHED: "ローンチ",
 };
+
+/** Transitions that need CEO-level (admin/owner) approval. Mirrors the DB gate. */
+export const CEO_GATED_STATUSES: ReadonlySet<OpportunityStatus> = new Set(["POC_APPROVED", "LAUNCHED"]);
+
+const FORWARD: Partial<Record<OpportunityStatus, OpportunityStatus>> = {
+  DISCOVERED: "VALIDATED",
+  RESEARCHING: "VALIDATED",
+  ON_HOLD: "VALIDATED",
+  VALIDATED: "EXPERIMENT_PROPOSED",
+  EXPERIMENT_PROPOSED: "EXPERIMENT_APPROVED",
+  EXPERIMENT_APPROVED: "POC_PROPOSED",
+  POC_PROPOSED: "POC_APPROVED",
+  POC_APPROVED: "LAUNCHED",
+};
+
+/** The next step forward in the decision gates (what "承認" means in FRIDAY). */
+export function nextForwardStatus(from: OpportunityStatus): OpportunityStatus | null {
+  return FORWARD[from] ?? null;
+}

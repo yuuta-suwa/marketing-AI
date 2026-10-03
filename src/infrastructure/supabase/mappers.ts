@@ -219,6 +219,9 @@ export const mapDecision = (r: Row): StoredDecision => ({
   fromStatus: r.from_status,
   toStatus: r.to_status,
   rationale: opt(r.rationale),
+  subject: opt(r.subject),
+  source: r.source ?? "UI",
+  advisorSessionId: opt(r.advisor_session_id),
   decidedBy: r.decided_by,
   createdAt: r.created_at,
 });

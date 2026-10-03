@@ -1,4 +1,5 @@
-import type { StoredDecision, StoredRedTeamReview } from "@/application/ports/repositories";
+import type { StoredAdvisorSession, StoredDecision, StoredRedTeamReview, StoredReport } from "@/application/ports/repositories";
+import type { Experiment, ExperimentDraft } from "@/domain/analysis/experiment";
 import type { PipelineResult } from "@/application/research/pipeline";
 import type { AdditionalResearchType } from "@/application/opportunity/additional-research";
 import type { Opportunity } from "@/domain/opportunity/opportunity";
@@ -29,12 +30,13 @@ export interface ExecutiveAssistantAdapter {
   sendDirective(request: ResearchRequest): Promise<PipelineResult>;
   requestDeepResearch(opportunityId: string, type: AdditionalResearchType, note?: string): Promise<PipelineResult>;
   consult(opportunityId: string): Promise<ExecutiveBriefing>;
-  openAdvisorCouncil(opportunityId: string): Promise<{ status: "NOT_AVAILABLE"; message: string }>;
+  openAdvisorCouncil(opportunityId: string): Promise<StoredAdvisorSession>;
   runRedTeam(opportunityId: string): Promise<StoredRedTeamReview>;
   approveOpportunity(opportunityId: string, toStatus: Opportunity["status"], rationale?: string): Promise<StoredDecision>;
   rejectOpportunity(opportunityId: string, rationale?: string): Promise<StoredDecision>;
   holdOpportunity(opportunityId: string, rationale?: string): Promise<StoredDecision>;
   watchOpportunity(opportunityId: string, rationale?: string): Promise<StoredDecision>;
-  createExperiment(opportunityId: string): Promise<{ status: "NOT_AVAILABLE"; message: string }>;
-  generatePoCSpec(opportunityId: string): Promise<{ status: "NOT_AVAILABLE"; message: string }>;
+  createExperiment(opportunityId: string, draft: ExperimentDraft): Promise<Experiment>;
+  generatePoCSpec(opportunityId: string): Promise<StoredReport>;
+  exportClaudeCode(opportunityId: string): Promise<StoredReport>;
 }

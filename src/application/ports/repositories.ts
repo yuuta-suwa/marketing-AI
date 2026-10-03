@@ -2,6 +2,8 @@ import type { CfoAnalysis, CfoInputs, InputProvenance } from "@/domain/analysis/
 import type { Experiment, ExperimentDecision, ExperimentDraft, ExperimentStatus } from "@/domain/analysis/experiment";
 import type { MarketEstimateResult } from "@/domain/analysis/market-size";
 import type { BusinessModelType } from "@/domain/opportunity/business-model";
+import type { CouncilResult } from "@/domain/executive/advisor-council";
+import type { WatchSnapshot } from "@/domain/executive/change-detection";
 import type { ComplianceStatus } from "@/domain/compliance/compliance";
 import type { CostEntry } from "@/domain/cost/cost";
 import type { Evidence, NewEvidence } from "@/domain/evidence/evidence";
@@ -94,6 +96,8 @@ export interface SignalRepository {
   listSignals(filter: { runId?: string; ids?: string[]; limit?: number }): Promise<StoredSignal[]>;
   insertClusters(clusters: NewCluster[]): Promise<StoredCluster[]>;
   listClusters(filter: { runId?: string; limit?: number }): Promise<StoredCluster[]>;
+  /** Signals created since a time, optionally matching text/country (monitoring). */
+  countSignalsSince(filter: { since: string; query?: string; country?: string }): Promise<{ total: number; byType: Partial<Record<string, number>> }>;
   getCluster(id: string): Promise<StoredCluster | null>;
 }
 
@@ -125,6 +129,10 @@ export type StoredDecision = {
   fromStatus: OpportunityStatus | null;
   toStatus: OpportunityStatus | null;
   rationale?: string;
+  /** Decision memory: what was decided (e.g. "PoC承認: 荷物預かり"). */
+  subject?: string;
+  source?: "UI" | "FRIDAY" | "SYSTEM";
+  advisorSessionId?: string;
   decidedBy: string;
   createdAt: string;
 };
@@ -288,6 +296,103 @@ export interface AnalysisRepository {
   updateExperiment(id: string, patch: { status?: ExperimentStatus; resultSummary?: string; decision?: ExperimentDecision; approve?: boolean; decide?: boolean }): Promise<Experiment>;
 }
 
+export type StoredAdvisorSession = CouncilResult & {
+  id: string;
+  opportunityId: string;
+  status: "OPEN" | "COMPLETED" | "FAILED";
+  createdAt: string;
+};
+
+export type StoredReport = {
+  id: string;
+  reportType: "DAILY_BRIEF" | "RESEARCH_SUMMARY" | "OPPORTUNITY" | "POC_SPEC" | "CLAUDE_CODE_PROMPT";
+  title: string;
+  contentMd: string;
+  contentJson: Record<string, unknown>;
+  opportunityId?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  createdAt: string;
+};
+
+export const WATCH_TARGETS = ["OPPORTUNITY", "COMPETITOR", "PROBLEM", "MARKET", "COUNTRY", "KEYWORD", "INDUSTRY", "PERSONA", "TECHNOLOGY", "REGULATION"] as const;
+export type WatchTarget = (typeof WATCH_TARGETS)[number];
+
+export type StoredWatchlist = {
+  id: string;
+  organizationId: string;
+  userId: string;
+  targetType: WatchTarget;
+  targetId?: string;
+  query?: string;
+  label?: string;
+  scheduleCron?: string;
+  active: boolean;
+  lastCheckedAt?: string;
+  snapshot?: WatchSnapshot;
+  createdAt: string;
+};
+
+export type StoredNotification = {
+  id: string;
+  userId: string;
+  kind: string;
+  title: string;
+  body?: string;
+  link?: string;
+  severity: "INFO" | "IMPORTANT" | "CRITICAL";
+  watchlistId?: string;
+  readAt?: string;
+  createdAt: string;
+};
+
+export const FEEDBACK_METRICS = ["CUSTOMER_RESPONSE", "CUSTOMER_INTERVIEW", "CONVERSION", "REVENUE", "RETENTION", "CHURN", "FEEDBACK", "LAUNCH_RESULT"] as const;
+export type FeedbackMetric = (typeof FEEDBACK_METRICS)[number];
+
+export type StoredFeedback = {
+  id: string;
+  opportunityId: string;
+  experimentId?: string;
+  metric: FeedbackMetric;
+  value?: number;
+  unit?: string;
+  note?: string;
+  occurredAt: string;
+  recordedBy: string;
+};
+
+export type LineageRow = {
+  opportunityId: string;
+  title: string;
+  status: OpportunityStatus;
+  scoreTotal: number | null;
+  confidence: ConfidenceLevel;
+  signalCount: number;
+  evidenceCount: number;
+  experimentCount: number;
+  experimentsPositive: number;
+  revenueTotal: number;
+  feedbackCount: number;
+};
+
+export interface ExecutiveRepository {
+  saveAdvisorSession(opportunityId: string, result: CouncilResult): Promise<StoredAdvisorSession>;
+  listAdvisorSessions(opportunityId: string): Promise<StoredAdvisorSession[]>;
+  saveReport(input: Omit<StoredReport, "id" | "createdAt">): Promise<StoredReport>;
+  getReport(id: string): Promise<StoredReport | null>;
+  listReports(filter: { type?: StoredReport["reportType"]; opportunityId?: string; limit?: number }): Promise<StoredReport[]>;
+  createWatchlist(input: { targetType: WatchTarget; targetId?: string; query?: string; label?: string; scheduleCron?: string }): Promise<StoredWatchlist>;
+  listWatchlists(filter?: { activeOnly?: boolean; mineOnly?: boolean }): Promise<StoredWatchlist[]>;
+  updateWatchlist(id: string, patch: { active?: boolean; snapshot?: WatchSnapshot; lastCheckedAt?: string }): Promise<void>;
+  /** Returns false when the dedupe key already exists (no duplicate notification). */
+  createNotification(input: Omit<StoredNotification, "id" | "createdAt" | "readAt"> & { dedupeKey?: string }): Promise<boolean>;
+  listNotifications(filter?: { unreadOnly?: boolean; limit?: number }): Promise<StoredNotification[]>;
+  markNotificationRead(id: string): Promise<void>;
+  recordFeedback(input: Omit<StoredFeedback, "id" | "recordedBy">): Promise<StoredFeedback>;
+  listFeedback(opportunityId: string): Promise<StoredFeedback[]>;
+  listLineage(): Promise<LineageRow[]>;
+}
+
 export type Repositories = {
   research: ResearchRepository;
   evidence: EvidenceRepository;
@@ -295,4 +400,5 @@ export type Repositories = {
   opportunities: OpportunityRepository;
   ops: OpsRepository;
   analysis: AnalysisRepository;
+  executive: ExecutiveRepository;
 };

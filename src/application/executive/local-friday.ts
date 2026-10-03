@@ -9,12 +9,11 @@ import { allowedNextStatuses } from "@/domain/opportunity/status";
 import { interpretScoreAndConfidence } from "@/domain/scoring/confidence";
 import { CRITERION_LABEL_JA } from "@/domain/scoring/criteria";
 import { DomainError } from "@/domain/shared/errors";
+import { createExperiment } from "@/application/analysis/experiments";
+import type { ExperimentDraft } from "@/domain/analysis/experiment";
+import { openAdvisorCouncil } from "./council";
+import { exportClaudeCodePrompt, generatePocSpecReport } from "./poc";
 import type { ExecutiveAssistantAdapter, ExecutiveBriefing } from "./executive-assistant";
-
-const PLANNED = (feature: string, milestone: string) => ({
-  status: "NOT_AVAILABLE" as const,
-  message: `${feature}は ${milestone} で実装予定です`,
-});
 
 export class LocalFridayAdapter implements ExecutiveAssistantAdapter {
   constructor(private readonly ctx: AppContext) {}
@@ -71,8 +70,8 @@ export class LocalFridayAdapter implements ExecutiveAssistantAdapter {
     };
   }
 
-  async openAdvisorCouncil() {
-    return PLANNED("顧問会議（Advisor Council）", "Milestone 3 (Phase 6)");
+  async openAdvisorCouncil(opportunityId: string) {
+    return openAdvisorCouncil(this.ctx, opportunityId);
   }
 
   async runRedTeam(opportunityId: string) {
@@ -82,29 +81,34 @@ export class LocalFridayAdapter implements ExecutiveAssistantAdapter {
 
   async approveOpportunity(opportunityId: string, toStatus: Parameters<ExecutiveAssistantAdapter["approveOpportunity"]>[1], rationale?: string) {
     await this.audit("approve", opportunityId, { toStatus });
-    return (await decideOpportunity(this.ctx, { opportunityId, decision: "APPROVE", toStatus, rationale })).decision;
+    return (await decideOpportunity(this.ctx, { opportunityId, decision: "APPROVE", toStatus, rationale, source: "FRIDAY" })).decision;
   }
 
   async rejectOpportunity(opportunityId: string, rationale?: string) {
     await this.audit("reject", opportunityId);
-    return (await decideOpportunity(this.ctx, { opportunityId, decision: "REJECT", rationale })).decision;
+    return (await decideOpportunity(this.ctx, { opportunityId, decision: "REJECT", rationale, source: "FRIDAY" })).decision;
   }
 
   async holdOpportunity(opportunityId: string, rationale?: string) {
     await this.audit("hold", opportunityId);
-    return (await decideOpportunity(this.ctx, { opportunityId, decision: "HOLD", rationale })).decision;
+    return (await decideOpportunity(this.ctx, { opportunityId, decision: "HOLD", rationale, source: "FRIDAY" })).decision;
   }
 
   async watchOpportunity(opportunityId: string, rationale?: string) {
     await this.audit("watch", opportunityId);
-    return (await decideOpportunity(this.ctx, { opportunityId, decision: "WATCH", rationale })).decision;
+    return (await decideOpportunity(this.ctx, { opportunityId, decision: "WATCH", rationale, source: "FRIDAY" })).decision;
   }
 
-  async createExperiment() {
-    return PLANNED("実験作成", "Milestone 4 (Phase 8)");
+  async createExperiment(opportunityId: string, draft: ExperimentDraft) {
+    await this.audit("create_experiment", opportunityId);
+    return createExperiment(this.ctx, opportunityId, draft);
   }
 
-  async generatePoCSpec() {
-    return PLANNED("PoC仕様書生成", "Milestone 4 (Phase 8)");
+  async generatePoCSpec(opportunityId: string) {
+    return generatePocSpecReport(this.ctx, opportunityId);
+  }
+
+  async exportClaudeCode(opportunityId: string) {
+    return exportClaudeCodePrompt(this.ctx, opportunityId);
   }
 }

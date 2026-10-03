@@ -70,6 +70,11 @@ export async function getOpportunityDetail(ctx: AppContext, opportunityId: strin
   const opportunity = await ctx.repos.opportunities.getOpportunity(opportunityId);
   if (!opportunity) throw new DomainError("NOT_FOUND", "Opportunity not found");
   const evidenceIds = await ctx.repos.opportunities.listOpportunityEvidenceIds(opportunityId);
+  const [council, reports, feedback] = await Promise.all([
+    ctx.repos.executive.listAdvisorSessions(opportunityId),
+    ctx.repos.executive.listReports({ opportunityId, limit: 10 }),
+    ctx.repos.executive.listFeedback(opportunityId),
+  ]);
   const [evidence, score, redTeam, decisions, cluster, relatedRuns, competitors, marketEstimates, businessModels, experiments] = await Promise.all([
     ctx.repos.evidence.listEvidence({ ids: evidenceIds }),
     ctx.repos.opportunities.latestScore(opportunityId),
@@ -97,6 +102,9 @@ export async function getOpportunityDetail(ctx: AppContext, opportunityId: strin
     marketEstimates,
     businessModels,
     experiments,
+    council: council[0] ?? null,
+    reports,
+    feedback,
     canDecide: can(ctx.actor, "opportunity.decide"),
     canAnalyze: can(ctx.actor, "analysis.run"),
   };
@@ -162,4 +170,36 @@ export async function getObservability(ctx: AppContext) {
     ctx.repos.ops.listAgentRuns({ limit: 50 }),
   ]);
   return { connectorRuns, agentRuns };
+}
+
+export async function getFridayCenter(ctx: AppContext, opportunityId?: string) {
+  authorize(ctx.actor, "research.read");
+  const [opportunities, runs] = await Promise.all([
+    ctx.repos.opportunities.listOpportunities({ limit: 100 }),
+    ctx.repos.research.listRuns({ limit: 10 }),
+  ]);
+  const selected = opportunityId ? (opportunities.find((o) => o.id === opportunityId) ?? null) : null;
+  const [council, decisions] = selected
+    ? await Promise.all([ctx.repos.executive.listAdvisorSessions(selected.id), ctx.repos.opportunities.listDecisions(selected.id)])
+    : [[], []];
+  return {
+    opportunities,
+    selected,
+    council: council[0] ?? null,
+    decisions,
+    pendingDecisions: opportunities.filter((o) => o.status === "EXPERIMENT_PROPOSED" || o.status === "POC_PROPOSED"),
+    activeRuns: runs.filter((r) => !["COMPLETED", "PARTIAL_SUCCESS", "FAILED", "CANCELLED"].includes(r.status)),
+    recentRuns: runs.slice(0, 5),
+    canCeoApprove: can(ctx.actor, "opportunity.ceo_approve"),
+  };
+}
+
+export async function getWatchCenter(ctx: AppContext) {
+  authorize(ctx.actor, "research.read");
+  const [watchlists, notifications, opportunities] = await Promise.all([
+    ctx.repos.executive.listWatchlists({ activeOnly: true, mineOnly: true }),
+    ctx.repos.executive.listNotifications({ limit: 50 }),
+    ctx.repos.opportunities.listOpportunities({ limit: 100 }),
+  ]);
+  return { watchlists, notifications, opportunities };
 }

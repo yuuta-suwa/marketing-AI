@@ -3,6 +3,8 @@ import { getOpportunityDetail } from "@/application/queries";
 import { ConfidenceBadge, EpistemicTag, OpportunityStatusPill, RunStatusPill, ScoreBadge, Tag } from "@/components/badges";
 import { AdditionalResearchForm, DecisionPanel, RedTeamButton } from "@/components/forms/opportunity-actions";
 import { FridayConsult } from "@/components/forms/friday-consult";
+import { CouncilButton, FeedbackForm, PocButtons } from "@/components/forms/executive-forms";
+import { CouncilView } from "@/components/friday/council-view";
 import { BusinessModelSection } from "@/components/opportunity/business-section";
 import { CompetitorsSection } from "@/components/opportunity/competitors-section";
 import { ExperimentsSection } from "@/components/opportunity/experiments-section";
@@ -182,9 +184,32 @@ export default async function OpportunityPage({ params }: PageProps<"/opportunit
         </ul>
       ) : null}
 
+      <SectionTitle>Advisor Council</SectionTitle>
+      <Card>
+        {d.council ? <CouncilView session={d.council} /> : <p className="mb-2 text-sm text-muted">未開催</p>}
+        <div className="mt-2"><CouncilButton opportunityId={o.id} /></div>
+      </Card>
+
       <div id="poc" />
-      <SectionTitle>顧問会議 / PoC仕様書</SectionTitle>
-      <EmptyState>Advisor Council（M3）・PoC Spec / Claude Code Export（M4）で提供予定</EmptyState>
+      <SectionTitle>PoC Specification / Claude Code Export</SectionTitle>
+      <Card>
+        <PocButtons opportunityId={o.id} exportAllowed={o.status === "POC_APPROVED" || o.status === "LAUNCHED"} />
+        <p className="mt-2 text-xs text-muted">Claude Code Export はPoC承認（管理者による人間の判断）後のみ可能です。</p>
+        {d.reports.length ? (
+          <ul className="mt-2 space-y-1 text-xs">{d.reports.map((r) => <li key={r.id}><Link className="underline" href={`/reports/${r.id}`}>{r.title}</Link></li>)}</ul>
+        ) : null}
+      </Card>
+
+      <SectionTitle>Feedback Loop</SectionTitle>
+      <Card>
+        <p className="mb-2 text-xs text-muted">PoC・ローンチ後の顧客反応・CV・売上・継続・解約を記録し、Signal → Revenue の学習データにします。</p>
+        {d.feedback.length ? (
+          <ul className="mb-3 space-y-1 text-xs" data-testid="feedback-list">
+            {d.feedback.map((f) => <li key={f.id} className="border-b border-line py-1">{f.metric} {f.value !== undefined ? `${f.value}${f.unit ? ` ${f.unit}` : ""}` : ""} {f.note ? `· ${f.note}` : ""}</li>)}
+          </ul>
+        ) : null}
+        <FeedbackForm opportunityId={o.id} experiments={d.experiments.map((x) => ({ id: x.id, title: x.title }))} />
+      </Card>
     </>
   );
 }

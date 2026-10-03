@@ -110,7 +110,7 @@ export function createSupabaseAnalysisRepository(db: SupabaseClient, actor: Acto
   return {
     async replaceCompetitors(opportunityId, rows, options = {}) {
       // Manual (user-entered) competitors are ASSUMPTION/FACT rows created via addCompetitor; analyst rows are INFERENCE.
-      let del = db.from("competitors").delete().eq("opportunity_id", opportunityId);
+      let del = db.from("competitors").delete().eq("organization_id", org).eq("opportunity_id", opportunityId);
       if (options.keepManual) del = del.eq("epistemic_status", "INFERENCE");
       must(await del.select("id"), "clear competitors");
       if (rows.length > 0) must(await db.from("competitors").insert(rows.map((r) => competitorRow(org, opportunityId, r))).select("id"), "insert competitors");
@@ -120,7 +120,7 @@ export function createSupabaseAnalysisRepository(db: SupabaseClient, actor: Acto
       return mapCompetitor(must(await db.from("competitors").insert(competitorRow(org, opportunityId, r)).select().single(), "add competitor"));
     },
     async listCompetitors(opportunityId) {
-      return (must(await db.from("competitors").select().eq("opportunity_id", opportunityId).order("created_at"), "list competitors") as Row[]).map(mapCompetitor);
+      return (must(await db.from("competitors").select().eq("organization_id", org).eq("opportunity_id", opportunityId).order("created_at"), "list competitors") as Row[]).map(mapCompetitor);
     },
     async saveMarketEstimate(opportunityId, e) {
       return mapEstimate(
@@ -149,10 +149,10 @@ export function createSupabaseAnalysisRepository(db: SupabaseClient, actor: Acto
       );
     },
     async listMarketEstimates(opportunityId) {
-      return (must(await db.from("market_estimates").select().eq("opportunity_id", opportunityId).order("created_at", { ascending: false }), "list estimates") as Row[]).map(mapEstimate);
+      return (must(await db.from("market_estimates").select().eq("organization_id", org).eq("opportunity_id", opportunityId).order("created_at", { ascending: false }), "list estimates") as Row[]).map(mapEstimate);
     },
     async replaceBusinessModels(opportunityId, rows) {
-      must(await db.from("business_models").delete().eq("opportunity_id", opportunityId).select("id"), "clear business models");
+      must(await db.from("business_models").delete().eq("organization_id", org).eq("opportunity_id", opportunityId).select("id"), "clear business models");
       if (rows.length > 0) {
         must(
           await db
@@ -178,10 +178,10 @@ export function createSupabaseAnalysisRepository(db: SupabaseClient, actor: Acto
       return this.listBusinessModels(opportunityId);
     },
     async listBusinessModels(opportunityId) {
-      return (must(await db.from("business_models").select().eq("opportunity_id", opportunityId).order("fit_score", { ascending: false }), "list business models") as Row[]).map(mapModel);
+      return (must(await db.from("business_models").select().eq("organization_id", org).eq("opportunity_id", opportunityId).order("fit_score", { ascending: false }), "list business models") as Row[]).map(mapModel);
     },
     async setUnitEconomics(id, unitEconomics) {
-      must(await db.from("business_models").update({ unit_economics: unitEconomics }).eq("id", id).select("id").single(), "set unit economics");
+      must(await db.from("business_models").update({ unit_economics: unitEconomics }).eq("organization_id", org).eq("id", id).select("id").single(), "set unit economics");
     },
     async createExperiment(opportunityId, d) {
       return mapExperiment(
@@ -209,7 +209,7 @@ export function createSupabaseAnalysisRepository(db: SupabaseClient, actor: Acto
       );
     },
     async getExperiment(id) {
-      const res = await db.from("experiments").select().eq("id", id).maybeSingle();
+      const res = await db.from("experiments").select().eq("organization_id", org).eq("id", id).maybeSingle();
       if (res.error) throw new Error(res.error.message);
       return res.data ? mapExperiment(res.data) : null;
     },
@@ -225,7 +225,7 @@ export function createSupabaseAnalysisRepository(db: SupabaseClient, actor: Acto
       if (patch.decision) update.decision = patch.decision;
       if (patch.approve) update.approved_by = actor.userId;
       if (patch.decide) update.decided_by = actor.userId;
-      return mapExperiment(must(await db.from("experiments").update(update).eq("id", id).select().single(), "update experiment"));
+      return mapExperiment(must(await db.from("experiments").update(update).eq("organization_id", org).eq("id", id).select().single(), "update experiment"));
     },
   };
 }

@@ -312,4 +312,70 @@ delete from public.evidence;
 select tests.expect_count($$select count(*) from public.evidence$$, 1, 'member cannot delete evidence');
 reset role;
 
+
+-- ---------------------------------------------------------------------------
+-- M4: CEO approval, watchlists, notifications, feedback, lineage
+-- ---------------------------------------------------------------------------
+select tests.login('00000000-0000-0000-0000-00000000000a');
+update public.opportunities set status = 'POC_PROPOSED' where id = '70000000-0000-0000-0000-000000000001';
+reset role;
+
+select tests.login('00000000-0000-0000-0000-00000000000d'); -- dave: member
+insert into public.decisions (organization_id, opportunity_id, decision, from_status, to_status, decided_by, source)
+select org_a, '70000000-0000-0000-0000-000000000001', 'APPROVE', 'POC_PROPOSED', 'POC_APPROVED', '00000000-0000-0000-0000-00000000000d', 'FRIDAY' from ids;
+select tests.expect_error($$
+  update public.opportunities set status = 'POC_APPROVED' where id = '70000000-0000-0000-0000-000000000001'
+$$, 'PoC approval by a member (non-CEO) is rejected');
+reset role;
+
+select tests.login('00000000-0000-0000-0000-00000000000a'); -- alice: owner
+insert into public.decisions (organization_id, opportunity_id, decision, from_status, to_status, decided_by, subject, source)
+select org_a, '70000000-0000-0000-0000-000000000001', 'APPROVE', 'POC_PROPOSED', 'POC_APPROVED', '00000000-0000-0000-0000-00000000000a', 'PoC承認', 'FRIDAY' from ids;
+update public.opportunities set status = 'POC_APPROVED' where id = '70000000-0000-0000-0000-000000000001';
+select tests.expect_count($$select count(*) from public.opportunities where status = 'POC_APPROVED'$$, 1, 'owner (CEO) can approve the PoC');
+
+insert into public.watchlists (organization_id, user_id, target_type, target_id)
+select org_a, '00000000-0000-0000-0000-00000000000a', 'OPPORTUNITY', '70000000-0000-0000-0000-000000000001' from ids;
+insert into public.watchlists (organization_id, user_id, target_type, query)
+select org_a, '00000000-0000-0000-0000-00000000000a', 'KEYWORD', '空港' from ids;
+select tests.expect_error($$
+  insert into public.watchlists (organization_id, user_id, target_type, query)
+  select org_a, '00000000-0000-0000-0000-00000000000a', 'KEYWORD', '空港' from ids
+$$, 'duplicate active watch is rejected');
+select tests.expect_error($$
+  insert into public.watchlists (organization_id, user_id, target_type, target_id)
+  select org_a, '00000000-0000-0000-0000-00000000000a', 'OPPORTUNITY', '70000000-0000-0000-0000-0000000000ff' from ids
+$$, 'watchlist cannot target an unknown/other-tenant opportunity');
+select tests.expect_error($$
+  insert into public.watchlists (organization_id, user_id, target_type, query)
+  select org_a, '00000000-0000-0000-0000-00000000000c', 'KEYWORD', 'x' from ids
+$$, 'cannot create a watchlist for another user');
+
+insert into public.notifications (organization_id, user_id, kind, title, dedupe_key)
+select org_a, '00000000-0000-0000-0000-00000000000a', 'WATCH_SCORE_JUMP', 't', 'k1' from ids;
+select tests.expect_error($$
+  insert into public.notifications (organization_id, user_id, kind, title, dedupe_key)
+  select org_a, '00000000-0000-0000-0000-00000000000a', 'WATCH_SCORE_JUMP', 't', 'k1' from ids
+$$, 'duplicate notification (same dedupe key) is rejected');
+select tests.expect_error($$
+  insert into public.notifications (organization_id, user_id, kind, title)
+  select org_a, '00000000-0000-0000-0000-00000000000c', 'x', 't' from ids
+$$, 'cannot create notifications for another user');
+
+insert into public.feedback_events (organization_id, opportunity_id, metric, value, unit, recorded_by)
+select org_a, '70000000-0000-0000-0000-000000000001', 'REVENUE', 50000, 'JPY', '00000000-0000-0000-0000-00000000000a' from ids;
+select tests.expect_error($$
+  insert into public.feedback_events (organization_id, opportunity_id, metric, value, recorded_by)
+  select org_a, '70000000-0000-0000-0000-000000000001', 'REVENUE', 1, '00000000-0000-0000-0000-00000000000b' from ids
+$$, 'feedback must be recorded as the current user');
+select tests.expect_count($$select revenue_total::bigint from public.opportunity_lineage where opportunity_id = '70000000-0000-0000-0000-000000000001'$$, 50000,
+  'lineage view aggregates revenue');
+reset role;
+
+select tests.login('00000000-0000-0000-0000-00000000000b');
+select tests.expect_count('select count(*) from public.opportunity_lineage', 0, 'bob cannot see alice lineage');
+select tests.expect_count('select count(*) from public.feedback_events', 0, 'bob cannot see alice feedback');
+select tests.expect_count('select count(*) from public.watchlists', 0, 'bob cannot see alice watchlists');
+reset role;
+
 \echo 'ALL DATABASE TESTS PASSED'

@@ -11,6 +11,7 @@ import type {
 import type { Actor } from "@/domain/auth/authorization";
 import { DEFAULT_SCORING_WEIGHTS, ScoringWeightsSchema, type ScoringWeights } from "@/domain/scoring/criteria";
 import { createSupabaseAnalysisRepository } from "./supabase-analysis";
+import { createSupabaseExecutiveRepository } from "./supabase-executive";
 import { DomainError } from "@/domain/shared/errors";
 import {
   OPPORTUNITY_COLUMNS,
@@ -52,7 +53,7 @@ const CLUSTER_SELECT = "id, organization_id, research_run_id, name, summary, sig
  * client so RLS enforces tenancy; organization_id is still written
  * explicitly and RLS rejects any mismatch.
  */
-export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Repositories {
+export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, options: { system?: boolean } = {}): Repositories {
   const org = actor.organizationId;
 
   const research: ResearchRepository = {
@@ -86,7 +87,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       return mapDirective(row);
     },
     async getDirective(id) {
-      const res = await db.from("research_directives").select().eq("id", id).maybeSingle();
+      const res = await db.from("research_directives").select().eq("organization_id", org).eq("id", id).maybeSingle();
       if (res.error) throw new Error(res.error.message);
       return res.data ? mapDirective(res.data) : null;
     },
@@ -110,7 +111,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       return mapRun(row);
     },
     async getRun(id) {
-      const res = await db.from("research_runs").select().eq("id", id).maybeSingle();
+      const res = await db.from("research_runs").select().eq("organization_id", org).eq("id", id).maybeSingle();
       if (res.error) throw new Error(res.error.message);
       return res.data ? mapRun(res.data) : null;
     },
@@ -125,7 +126,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       if (patch.degraded !== undefined) update.degraded = patch.degraded;
       if (patch.stats !== undefined) update.stats = patch.stats;
       if (patch.costUsd !== undefined) update.cost_usd = patch.costUsd;
-      return mapRun(must(await db.from("research_runs").update(update).eq("id", id).select().single(), `run -> ${to}`));
+      return mapRun(must(await db.from("research_runs").update(update).eq("organization_id", org).eq("id", id).select().single(), `run -> ${to}`));
     },
   };
 
@@ -164,7 +165,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       return rows.map(mapSourceItem);
     },
     async listSourceItems(runId) {
-      return must(await db.from("source_items").select().eq("research_run_id", runId), "list source items").map(mapSourceItem);
+      return must(await db.from("source_items").select().eq("organization_id", org).eq("research_run_id", runId), "list source items").map(mapSourceItem);
     },
     async insertEvidence(items) {
       if (items.length === 0) return [];
@@ -192,7 +193,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       return rows.map(mapEvidence);
     },
     async listEvidence(filter) {
-      let q = db.from("evidence").select();
+      let q = db.from("evidence").select().eq("organization_id", org);
       if (filter.runId) q = q.eq("research_run_id", filter.runId);
       if (filter.ids) {
         if (filter.ids.length === 0) return [];
@@ -247,13 +248,13 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
     async setEmbeddings(rows) {
       for (const r of rows) {
         must(
-          await db.from("signals").update({ embedding: toVectorLiteral(r.embedding), embedding_model: r.model }).eq("id", r.id).select("id").single(),
+          await db.from("signals").update({ embedding: toVectorLiteral(r.embedding), embedding_model: r.model }).eq("organization_id", org).eq("id", r.id).select("id").single(),
           "set embedding",
         );
       }
     },
     async listSignals(filter) {
-      let q = db.from("signals").select(SIGNAL_SELECT).order("created_at", { ascending: false }).limit(filter.limit ?? 1000);
+      let q = db.from("signals").select(SIGNAL_SELECT).eq("organization_id", org).order("created_at", { ascending: false }).limit(filter.limit ?? 1000);
       if (filter.runId) q = q.eq("research_run_id", filter.runId);
       if (filter.ids) {
         if (filter.ids.length === 0) return [];
@@ -302,12 +303,24 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       return out;
     },
     async listClusters(filter) {
-      let q = db.from("signal_clusters").select(CLUSTER_SELECT).order("signal_count", { ascending: false }).limit(filter.limit ?? 200);
+      let q = db.from("signal_clusters").select(CLUSTER_SELECT).eq("organization_id", org).order("signal_count", { ascending: false }).limit(filter.limit ?? 200);
       if (filter.runId) q = q.eq("research_run_id", filter.runId);
       return must(await q, "list clusters").map(mapCluster);
     },
+    async countSignalsSince(filter) {
+      let q = db.from("signals").select("signal_type").eq("organization_id", org).gte("created_at", filter.since).limit(5000);
+      if (filter.query) {
+        const safe = filter.query.replace(/[%_,()]/g, " ").slice(0, 100);
+        q = q.or(`problem.ilike.%${safe}%,category.ilike.%${safe}%`);
+      }
+      if (filter.country) q = q.eq("country", filter.country);
+      const rows = must(await q, "count signals") as Array<{ signal_type: string }>;
+      const byType: Record<string, number> = {};
+      for (const r of rows) byType[r.signal_type] = (byType[r.signal_type] ?? 0) + 1;
+      return { total: rows.length, byType };
+    },
     async getCluster(id) {
-      const res = await db.from("signal_clusters").select(CLUSTER_SELECT).eq("id", id).maybeSingle();
+      const res = await db.from("signal_clusters").select(CLUSTER_SELECT).eq("organization_id", org).eq("id", id).maybeSingle();
       if (res.error) throw new Error(res.error.message);
       return res.data ? mapCluster(res.data) : null;
     },
@@ -340,7 +353,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       return mapOpportunity(created);
     },
     async getOpportunity(id) {
-      const res = await db.from("opportunities").select().eq("id", id).maybeSingle();
+      const res = await db.from("opportunities").select().eq("organization_id", org).eq("id", id).maybeSingle();
       if (res.error) throw new Error(res.error.message);
       return res.data ? mapOpportunity(res.data) : null;
     },
@@ -351,7 +364,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       return must(await q, "list opportunities").map(mapOpportunity);
     },
     async listOpportunityEvidenceIds(id) {
-      const rows = must(await db.from("opportunity_evidence").select("evidence_id").eq("opportunity_id", id), "list opportunity evidence");
+      const rows = must(await db.from("opportunity_evidence").select("evidence_id").eq("organization_id", org).eq("opportunity_id", id), "list opportunity evidence");
       return (rows as Array<{ evidence_id: string }>).map((r) => r.evidence_id);
     },
     async saveScore(input) {
@@ -375,7 +388,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       return mapScore(row);
     },
     async latestScore(opportunityId) {
-      const res = await db.from("opportunity_scores").select().eq("opportunity_id", opportunityId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      const res = await db.from("opportunity_scores").select().eq("organization_id", org).eq("opportunity_id", opportunityId).order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (res.error) throw new Error(res.error.message);
       return res.data ? mapScore(res.data) : null;
     },
@@ -401,7 +414,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       return mapRedTeam(row);
     },
     async listRedTeam(opportunityId) {
-      return must(await db.from("red_team_reviews").select().eq("opportunity_id", opportunityId).order("created_at", { ascending: false }), "list red team").map(mapRedTeam);
+      return must(await db.from("red_team_reviews").select().eq("organization_id", org).eq("opportunity_id", opportunityId).order("created_at", { ascending: false }), "list red team").map(mapRedTeam);
     },
     async recordDecision(input) {
       const row = must(
@@ -414,6 +427,9 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
             from_status: input.fromStatus,
             to_status: input.toStatus,
             rationale: input.rationale ?? null,
+            subject: input.subject ?? null,
+            source: input.source ?? "UI",
+            advisor_session_id: input.advisorSessionId ?? null,
             decided_by: actor.userId,
           })
           .select()
@@ -423,7 +439,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       return mapDecision(row);
     },
     async listDecisions(opportunityId) {
-      return must(await db.from("decisions").select().eq("opportunity_id", opportunityId).order("created_at", { ascending: false }), "list decisions").map(mapDecision);
+      return must(await db.from("decisions").select().eq("organization_id", org).eq("opportunity_id", opportunityId).order("created_at", { ascending: false }), "list decisions").map(mapDecision);
     },
     async linkEvidence(opportunityId, evidenceIds, sourceRunId) {
       if (evidenceIds.length === 0) return 0;
@@ -450,10 +466,10 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
         const current = await opportunities.getOpportunity(id);
         update.field_provenance = { ...(current?.fieldProvenance ?? {}), ...patch.fieldProvenance };
       }
-      return mapOpportunity(must(await db.from("opportunities").update(update).eq("id", id).select().single(), "update assessment"));
+      return mapOpportunity(must(await db.from("opportunities").update(update).eq("organization_id", org).eq("id", id).select().single(), "update assessment"));
     },
     async setStatus(id, to) {
-      return mapOpportunity(must(await db.from("opportunities").update({ status: to }).eq("id", id).select().single(), `opportunity -> ${to}`));
+      return mapOpportunity(must(await db.from("opportunities").update({ status: to }).eq("organization_id", org).eq("id", id).select().single(), `opportunity -> ${to}`));
     },
   };
 
@@ -491,6 +507,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
             duration_ms: patch.durationMs,
             completed_at: new Date().toISOString(),
           })
+          .eq("organization_id", org)
           .eq("id", id)
           .select("id")
           .single(),
@@ -533,7 +550,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       ).map(mapConnectorRun);
     },
     async listConnectorRuns(runId) {
-      return must(await db.from("connector_runs").select().eq("research_run_id", runId).order("started_at"), "list connector runs").map(mapConnectorRun);
+      return must(await db.from("connector_runs").select().eq("organization_id", org).eq("research_run_id", runId).order("started_at"), "list connector runs").map(mapConnectorRun);
     },
     async recordCost(e) {
       must(
@@ -565,7 +582,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       return Number(res.data ?? 0);
     },
     async spendByRun(runId) {
-      const rows = must(await db.from("cost_ledger").select("amount_usd").eq("research_run_id", runId), "run spend") as Array<{ amount_usd: string | number }>;
+      const rows = must(await db.from("cost_ledger").select("amount_usd").eq("organization_id", org).eq("research_run_id", runId), "run spend") as Array<{ amount_usd: string | number }>;
       return rows.reduce((n, r) => n + Number(r.amount_usd), 0);
     },
     async getBudget() {
@@ -592,9 +609,9 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
         ) as { id: string };
         return { id: row.id, weights };
       }
-      const prev = must(await db.from("scoring_settings").select("version").eq("id", current.id).single(), "scoring version") as { version: number };
+      const prev = must(await db.from("scoring_settings").select("version").eq("organization_id", org).eq("id", current.id).single(), "scoring version") as { version: number };
       must(
-        await db.from("scoring_settings").update({ weights, version: prev.version + 1 }).eq("id", current.id).select("id").single(),
+        await db.from("scoring_settings").update({ weights, version: prev.version + 1 }).eq("organization_id", org).eq("id", current.id).select("id").single(),
         "update scoring settings",
       );
       return { id: current.id, weights };
@@ -629,6 +646,19 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
       );
     },
     async audit(action, entityType, entityId, metadata) {
+      if (options.system) {
+        // Scheduled jobs (service role): no auth.uid(), so write directly and mark as system.
+        const res = await db.from("audit_logs").insert({
+          organization_id: org,
+          actor_id: null,
+          action,
+          entity_type: entityType,
+          entity_id: entityId ?? null,
+          metadata: { ...(metadata ?? {}), system: true },
+        });
+        if (res.error) throw new Error(`audit: ${res.error.message}`);
+        return;
+      }
       const res = await db.rpc("record_audit_event", {
         org,
         event_action: action,
@@ -640,5 +670,13 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
     },
   };
 
-  return { research, evidence, signals, opportunities, ops, analysis: createSupabaseAnalysisRepository(db, actor) };
+  return {
+    research,
+    evidence,
+    signals,
+    opportunities,
+    ops,
+    analysis: createSupabaseAnalysisRepository(db, actor),
+    executive: createSupabaseExecutiveRepository(db, actor),
+  };
 }

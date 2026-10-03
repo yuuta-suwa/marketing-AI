@@ -41,7 +41,11 @@ npm start
 - Research runs execute via `after()` within the request's max duration; for long runs set the platform's function max duration (e.g. 60–300 s). M3 moves execution to a queue worker.
 - PWA: `manifest.webmanifest` and `sw.js` are served from the app root; HTTPS is required for installation.
 
-## 4. Post-deploy checks
+## 4. Scheduled jobs
+
+`vercel.json` schedules `/api/cron/monitor` (hourly, watchlists) and `/api/cron/daily-brief` (22:43 UTC ≈ 07:43 JST). Set `CRON_SECRET` (≥16 chars) and `SUPABASE_SERVICE_ROLE_KEY` on the server. On other hosts, call the routes with `Authorization: Bearer $CRON_SECRET`.
+
+## 5. Post-deploy checks
 
 - Sign up two users; confirm neither sees the other's runs.
 - Settings → Connectors shows credential and compliance status for each connector.

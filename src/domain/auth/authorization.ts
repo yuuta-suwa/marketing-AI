@@ -12,6 +12,7 @@ export const ACTIONS = {
   "opportunity.decide": "member",
   "analysis.run": "member",
   "watchlist.manage": "member",
+  "opportunity.ceo_approve": "admin",
   "connector.configure": "admin",
   "scoring.configure": "admin",
   "member.manage": "admin",

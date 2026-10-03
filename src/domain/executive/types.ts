@@ -1,0 +1,9 @@
+export type AdditionalResearchKind =
+  | "ADDITIONAL"
+  | "OVERSEAS_COMPARISON"
+  | "COMPETITOR"
+  | "WILLINGNESS_TO_PAY"
+  | "MARKET_SIZE"
+  | "REGULATION"
+  | "PRICING"
+  | "DISTRIBUTION";

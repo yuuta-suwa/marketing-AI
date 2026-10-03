@@ -12,10 +12,11 @@ import type {
 } from "@/application/ports/repositories";
 import type { Actor } from "@/domain/auth/authorization";
 import { assertVerbatim } from "@/domain/evidence/evidence";
-import { assertOpportunityTransition, HUMAN_GATED_STATUSES } from "@/domain/opportunity/status";
+import { assertOpportunityTransition, CEO_GATED_STATUSES, HUMAN_GATED_STATUSES } from "@/domain/opportunity/status";
 import { assertRunTransition } from "@/domain/research/run-state-machine";
 import { DEFAULT_SCORING_WEIGHTS, ScoringWeightsSchema } from "@/domain/scoring/criteria";
 import { createMemoryAnalysisRepository } from "./memory-analysis";
+import { createMemoryExecutiveRepository } from "./memory-executive";
 import { DomainError } from "@/domain/shared/errors";
 import type { Clock } from "@/lib/clock";
 import { newId } from "@/lib/ids";
@@ -29,7 +30,7 @@ function strip<T extends { organizationId: string }>(row: T): Omit<T, "organizat
   return rest;
 }
 
-export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock: Clock): Repositories {
+export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock: Clock, options: { system?: boolean } = {}): Repositories {
   const org = actor.organizationId;
   const now = () => clock.now().toISOString();
   const mine = <T extends { organizationId: string }>(row: T | undefined): T | undefined =>
@@ -177,6 +178,19 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
         .slice(0, filter.limit ?? 200)
         .map(strip);
     },
+    async countSignalsSince(filter) {
+      const q = filter.query?.toLowerCase();
+      const rows = [...db.signals.values()].filter(
+        (s) =>
+          s.organizationId === org &&
+          s.createdAt >= filter.since &&
+          (!q || s.problem.toLowerCase().includes(q) || (s.category ?? "").toLowerCase().includes(q)) &&
+          (!filter.country || s.country === filter.country),
+      );
+      const byType: Record<string, number> = {};
+      for (const s of rows) byType[s.signalType] = (byType[s.signalType] ?? 0) + 1;
+      return { total: rows.length, byType };
+    },
     async getCluster(id) {
       const c = mine(db.clusters.get(id));
       return c ? strip(c) : null;
@@ -252,7 +266,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
     },
     async recordDecision(input) {
       if (!mine(db.opportunities.get(input.opportunityId))) throw new DomainError("NOT_FOUND", "opportunity not found");
-      const row = { ...input, id: newId(), organizationId: org, decidedBy: actor.userId, createdAt: now() };
+      const row = { source: "UI" as const, ...input, id: newId(), organizationId: org, decidedBy: actor.userId, decidedByRole: actor.role, createdAt: now() };
       db.decisions.set(row.id, row);
       return strip(row);
     },
@@ -261,7 +275,11 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
         .reverse()
         .filter((d) => d.organizationId === org && d.opportunityId === opportunityId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .map(strip);
+        .map((d) => {
+          const { decidedByRole: _r, ...rest } = strip(d as typeof d & { decidedByRole?: string });
+          void _r;
+          return rest;
+        });
     },
     async linkEvidence(opportunityId, evidenceIds, sourceRunId) {
       if (!mine(db.opportunities.get(opportunityId))) throw new DomainError("NOT_FOUND", "opportunity not found");
@@ -288,8 +306,14 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
     async setStatus(id, to) {
       const opp = mine(db.opportunities.get(id));
       if (!opp) throw new DomainError("NOT_FOUND", "opportunity not found");
+      // Mirrors the DB gate: PoC approval / launch need an admin/owner (CEO) decision.
       const decided = [...db.decisions.values()].some(
-        (d) => d.organizationId === org && d.opportunityId === id && d.fromStatus === opp.status && d.toStatus === to,
+        (d) =>
+          d.organizationId === org &&
+          d.opportunityId === id &&
+          d.fromStatus === opp.status &&
+          d.toStatus === to &&
+          (!CEO_GATED_STATUSES.has(to) || (d as { decidedByRole?: string }).decidedByRole === "admin" || (d as { decidedByRole?: string }).decidedByRole === "owner"),
       );
       assertOpportunityTransition(opp.status, to, {
         evidenceCount: db.opportunityEvidence.get(id)?.length ?? 0,
@@ -391,5 +415,13 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
     },
   };
 
-  return { research, evidence, signals, opportunities, ops, analysis: createMemoryAnalysisRepository(db, actor, clock) };
+  return {
+    research,
+    evidence,
+    signals,
+    opportunities,
+    ops,
+    analysis: createMemoryAnalysisRepository(db, actor, clock),
+    executive: createMemoryExecutiveRepository(db, actor, clock, options),
+  };
 }

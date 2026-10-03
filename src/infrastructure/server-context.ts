@@ -18,7 +18,7 @@ import { createSupabaseRepositories } from "./supabase/supabase-repositories";
 export const DEMO_ACTOR: Actor = { userId: "00000000-0000-4000-8000-000000000001", organizationId: "00000000-0000-4000-8000-0000000000a1", role: "owner" };
 
 const globalStore = globalThis as unknown as { __mroDemoDb?: MemoryDatabase };
-function demoDb(): MemoryDatabase {
+export function demoDatabase(): MemoryDatabase {
   globalStore.__mroDemoDb ??= new MemoryDatabase();
   return globalStore.__mroDemoDb;
 }
@@ -33,7 +33,7 @@ export type Session = { actor: Actor; email: string | null; repos: Repositories;
 export async function getSession(): Promise<Session | null> {
   const mode = runtimeMode();
   if (mode === "demo") {
-    return { actor: DEMO_ACTOR, email: "demo@local", repos: createMemoryRepositories(demoDb(), DEMO_ACTOR, systemClock), mode };
+    return { actor: DEMO_ACTOR, email: "demo@local", repos: createMemoryRepositories(demoDatabase(), DEMO_ACTOR, systemClock), mode };
   }
   if (mode !== "supabase") return null;
 

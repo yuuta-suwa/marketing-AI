@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-10-03 · Milestone 3 complete.
+Last updated: 2026-10-03 · Milestone 4 complete.
 
 ## Repository audit (start of M1)
 
@@ -15,9 +15,9 @@ The repository was empty (no commits, no files). Everything below was built from
 | 3 | Signal extraction, embeddings, clustering, opportunity, scoring | ✅ semantic embeddings adapter (OpenAI) + local fallback, LLM cluster naming, editable weights |
 | 4 | Competition, market size, business model, CFO, Red Team | ✅ done (deterministic, evidence-cited; LLM competitor extraction optional) |
 | 5 | Mobile dashboard, opportunity detail, research UI | ✅ MVP |
-| 6 | FRIDAY adapter, advisor council, decision gate | 🟡 FRIDAY local adapter + decision gates done; council M3 |
-| 7 | Watchlist, daily brief, automation, cost control | 🟡 cost control (budgets, ledger, UI) done; rest M3 |
-| 8 | PoC spec, Claude Code export, feedback loop | ⬜ M4 |
+| 6 | FRIDAY adapter, advisor council, decision gate | ✅ command center, decision memory, council, CEO approval gate |
+| 7 | Watchlist, daily brief, automation, cost control | ✅ watchlists + scheduled monitoring, meaningful-change notifications, daily brief, cron |
+| 8 | PoC spec, Claude Code export, feedback loop | ✅ spec, gated export, feedback events + lineage dataset |
 | 9 | Testing, security audit, performance, release | 🟡 test suites in place for all built features |
 
 ## MVP acceptance criteria
