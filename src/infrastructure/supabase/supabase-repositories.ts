@@ -9,7 +9,8 @@ import type {
   SignalRepository,
 } from "@/application/ports/repositories";
 import type { Actor } from "@/domain/auth/authorization";
-import { DEFAULT_SCORING_WEIGHTS, type ScoringWeights } from "@/domain/scoring/criteria";
+import { DEFAULT_SCORING_WEIGHTS, ScoringWeightsSchema, type ScoringWeights } from "@/domain/scoring/criteria";
+import { createSupabaseAnalysisRepository } from "./supabase-analysis";
 import { DomainError } from "@/domain/shared/errors";
 import {
   OPPORTUNITY_COLUMNS,
@@ -424,6 +425,33 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
     async listDecisions(opportunityId) {
       return must(await db.from("decisions").select().eq("opportunity_id", opportunityId).order("created_at", { ascending: false }), "list decisions").map(mapDecision);
     },
+    async linkEvidence(opportunityId, evidenceIds, sourceRunId) {
+      if (evidenceIds.length === 0) return 0;
+      const rows = must(
+        await db
+          .from("opportunity_evidence")
+          .upsert(
+            [...new Set(evidenceIds)].map((evidenceId) => ({ opportunity_id: opportunityId, evidence_id: evidenceId, organization_id: org, source_run_id: sourceRunId ?? null })),
+            { onConflict: "opportunity_id,evidence_id", ignoreDuplicates: true },
+          )
+          .select("evidence_id"),
+        "link evidence",
+      ) as unknown[];
+      return rows.length;
+    },
+    async updateAssessment(id, patch) {
+      const update: Record<string, unknown> = {};
+      if (patch.scoreTotal !== undefined) update.score_total = patch.scoreTotal;
+      if (patch.confidence) update.confidence = patch.confidence;
+      if (patch.competitorsSummary !== undefined) update.competitors_summary = patch.competitorsSummary;
+      if (patch.marketSizeSummary !== undefined) update.market_size_summary = patch.marketSizeSummary;
+      if (patch.revenueModel !== undefined) update.revenue_model = patch.revenueModel;
+      if (patch.fieldProvenance) {
+        const current = await opportunities.getOpportunity(id);
+        update.field_provenance = { ...(current?.fieldProvenance ?? {}), ...patch.fieldProvenance };
+      }
+      return mapOpportunity(must(await db.from("opportunities").update(update).eq("id", id).select().single(), "update assessment"));
+    },
     async setStatus(id, to) {
       return mapOpportunity(must(await db.from("opportunities").update({ status: to }).eq("id", id).select().single(), `opportunity -> ${to}`));
     },
@@ -554,6 +582,23 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
         ? { id: res.data.id as string, weights: res.data.weights as ScoringWeights }
         : { id: null, weights: DEFAULT_SCORING_WEIGHTS };
     },
+    async updateScoringWeights(weights) {
+      ScoringWeightsSchema.parse(weights);
+      const current = await ops.getScoringWeights();
+      if (!current.id) {
+        const row = must(
+          await db.from("scoring_settings").insert({ organization_id: org, name: "Default", weights, created_by: actor.userId }).select("id").single(),
+          "create scoring settings",
+        ) as { id: string };
+        return { id: row.id, weights };
+      }
+      const prev = must(await db.from("scoring_settings").select("version").eq("id", current.id).single(), "scoring version") as { version: number };
+      must(
+        await db.from("scoring_settings").update({ weights, version: prev.version + 1 }).eq("id", current.id).select("id").single(),
+        "update scoring settings",
+      );
+      return { id: current.id, weights };
+    },
     async getConnectorSettings() {
       const rows = must(await db.from("connectors").select("connector_key, enabled, compliance_status, terms_notes").eq("organization_id", org), "connector settings") as Array<Record<string, unknown>>;
       return rows.map((r) => ({
@@ -595,5 +640,5 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor): Re
     },
   };
 
-  return { research, evidence, signals, opportunities, ops };
+  return { research, evidence, signals, opportunities, ops, analysis: createSupabaseAnalysisRepository(db, actor) };
 }

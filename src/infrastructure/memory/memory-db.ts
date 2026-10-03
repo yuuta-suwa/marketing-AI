@@ -6,8 +6,12 @@ import type {
   StoredCluster,
   StoredDecision,
   StoredRedTeamReview,
+  StoredBusinessModel,
+  StoredCompetitor,
+  StoredMarketEstimate,
   StoredScore,
 } from "@/application/ports/repositories";
+import type { Experiment } from "@/domain/analysis/experiment";
 import type { CostEntry } from "@/domain/cost/cost";
 import type { Evidence } from "@/domain/evidence/evidence";
 import type { Opportunity } from "@/domain/opportunity/opportunity";
@@ -43,4 +47,9 @@ export class MemoryDatabase {
   budgets = new Map<string, OrgBudget>();
   scoring = new Map<string, ScoringWeights>();
   connectorSettings = new Map<string, ConnectorSetting[]>();
+  competitors = new Map<string, Scoped<StoredCompetitor> & { manual?: boolean }>();
+  marketEstimates = new Map<string, Scoped<StoredMarketEstimate>>();
+  businessModels = new Map<string, Scoped<StoredBusinessModel>>();
+  experiments = new Map<string, Scoped<Experiment>>();
+  opportunityEvidenceSource = new Map<string, string>();
 }

@@ -1,5 +1,6 @@
 import { AgentRunner } from "@/application/agent-runner";
 import { createBudgetTracker } from "@/application/budget";
+import { incorporateAdditionalResearch } from "@/application/opportunity/incorporate";
 import type { AppContext } from "@/application/context";
 import type { ConnectorSetting } from "@/application/ports/repositories";
 import { authorize } from "@/domain/auth/authorization";
@@ -142,12 +143,14 @@ export async function runResearchPipeline(
       evidence: evidenceMap,
       sourceItems: sourceMap,
       qualityOf,
+      runner,
     });
     stats.clusters = clusters.length;
 
     // ---- ANALYZING -------------------------------------------------------
     await move("ANALYZING");
-    const generated = await generateOpportunities(ctx, runner, {
+    // Additional research updates its originating opportunity instead of spawning new ones.
+    const generated = run.opportunityId ? { opportunities: [], budgetStops: [] } : await generateOpportunities(ctx, runner, {
       runId,
       directive,
       clusters,
@@ -164,6 +167,16 @@ export async function runResearchPipeline(
     for (const o of generated.opportunities) {
       const linked = await ctx.repos.opportunities.listOpportunityEvidenceIds(o.id);
       if (linked.length === 0) throw new DomainError("EVIDENCE_INTEGRITY", `Opportunity ${o.id} has no evidence`);
+    }
+    if (run.opportunityId) {
+      try {
+        const { linked } = await incorporateAdditionalResearch(ctx, run);
+        stats.linkedToOpportunity = linked;
+      } catch (e) {
+        degraded = true;
+        log.error("run.incorporate_failed", { error: (e as Error).message });
+        budgetStops.push(`Opportunity更新に失敗: ${(e as Error).message}`);
+      }
     }
     if (budgetStops.length > 0) {
       stats.budgetStops = budgetStops;

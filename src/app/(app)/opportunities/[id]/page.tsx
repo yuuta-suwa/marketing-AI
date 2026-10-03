@@ -3,6 +3,12 @@ import { getOpportunityDetail } from "@/application/queries";
 import { ConfidenceBadge, EpistemicTag, OpportunityStatusPill, RunStatusPill, ScoreBadge, Tag } from "@/components/badges";
 import { AdditionalResearchForm, DecisionPanel, RedTeamButton } from "@/components/forms/opportunity-actions";
 import { FridayConsult } from "@/components/forms/friday-consult";
+import { BusinessModelSection } from "@/components/opportunity/business-section";
+import { CompetitorsSection } from "@/components/opportunity/competitors-section";
+import { ExperimentsSection } from "@/components/opportunity/experiments-section";
+import { MarketSizeSection } from "@/components/opportunity/market-size-section";
+import { JumpLinks } from "@/components/opportunity/jump-links";
+import { QuickResearchButtons } from "@/components/opportunity/quick-actions";
 import { Card, EmptyState, Field, Notice, PageHeader, SectionTitle } from "@/components/ui";
 import type { OpportunityTextField } from "@/domain/opportunity/opportunity";
 import { allowedNextStatuses } from "@/domain/opportunity/status";
@@ -43,6 +49,7 @@ export default async function OpportunityPage({ params }: PageProps<"/opportunit
   const o = d.opportunity;
   const review = d.redTeam[0];
   const prov = o.fieldProvenance as Record<string, EpistemicStatus>;
+  const evidenceOptions = d.evidence.map((e) => ({ id: e.id, label: e.evidenceText.slice(0, 40) }));
   const sources = new Set(d.evidence.map((e) => (e.source ? `${e.source.connectorId}:${e.source.sourceName}` : e.sourceItemId)));
 
   return (
@@ -61,6 +68,9 @@ export default async function OpportunityPage({ params }: PageProps<"/opportunit
           <div><dd className="font-bold">{o.momentum}</dd><dt className="text-[11px] text-muted">Momentum</dt></div>
         </dl>
       </Card>
+
+      <JumpLinks />
+      <div className="mt-2"><QuickResearchButtons opportunityId={o.id} /></div>
 
       <SectionTitle>Opportunity</SectionTitle>
       <Card>
@@ -112,6 +122,7 @@ export default async function OpportunityPage({ params }: PageProps<"/opportunit
         </Card>
       ) : <EmptyState>スコア未算出</EmptyState>}
 
+      <div id="red-team" />
       <SectionTitle>Red Team</SectionTitle>
       {review ? (
         <Card>
@@ -128,9 +139,20 @@ export default async function OpportunityPage({ params }: PageProps<"/opportunit
       ) : <EmptyState>Red Teamは未実施です</EmptyState>}
       <div className="mt-2"><RedTeamButton opportunityId={o.id} /></div>
 
-      <SectionTitle>CFO / Competitors / Market Size</SectionTitle>
-      <EmptyState>競合分析・市場規模（Top-down / Bottom-up / Value Theory）・CFO分析は Milestone 2 で提供予定。根拠のない数値は表示しません。</EmptyState>
+      <SectionTitle>Competitors</SectionTitle>
+      <Card><CompetitorsSection opportunityId={o.id} competitors={d.competitors} evidenceOptions={evidenceOptions} /></Card>
 
+      <div id="market-size" />
+      <SectionTitle>Market Size</SectionTitle>
+      <Card><MarketSizeSection opportunityId={o.id} estimates={d.marketEstimates} evidenceOptions={evidenceOptions} /></Card>
+
+      <SectionTitle>Business Model / CFO</SectionTitle>
+      <Card><BusinessModelSection opportunityId={o.id} models={d.businessModels} evidenceOptions={evidenceOptions} /></Card>
+
+      <SectionTitle>Experiments</SectionTitle>
+      <Card><ExperimentsSection opportunityId={o.id} experiments={d.experiments} defaults={{ hypothesis: o.nextExperiment, killCriteria: o.killCriteria }} /></Card>
+
+      <div id="additional" />
       <SectionTitle>追加調査</SectionTitle>
       <Card><AdditionalResearchForm opportunityId={o.id} /></Card>
       {d.relatedRuns.length > 0 ? (
@@ -145,9 +167,11 @@ export default async function OpportunityPage({ params }: PageProps<"/opportunit
         </ul>
       ) : null}
 
+      <div id="friday" />
       <SectionTitle>FRIDAY相談</SectionTitle>
       <Card><FridayConsult opportunities={[{ id: o.id, title: o.title }]} defaultId={o.id} /></Card>
 
+      <div id="decision" />
       <SectionTitle>Human Decision</SectionTitle>
       <Card><DecisionPanel opportunityId={o.id} status={o.status} nextStatuses={allowedNextStatuses(o.status)} /></Card>
       {d.decisions.length > 0 ? (
@@ -158,6 +182,7 @@ export default async function OpportunityPage({ params }: PageProps<"/opportunit
         </ul>
       ) : null}
 
+      <div id="poc" />
       <SectionTitle>顧問会議 / PoC仕様書</SectionTitle>
       <EmptyState>Advisor Council（M3）・PoC Spec / Claude Code Export（M4）で提供予定</EmptyState>
     </>

@@ -14,7 +14,8 @@ import type { Actor } from "@/domain/auth/authorization";
 import { assertVerbatim } from "@/domain/evidence/evidence";
 import { assertOpportunityTransition, HUMAN_GATED_STATUSES } from "@/domain/opportunity/status";
 import { assertRunTransition } from "@/domain/research/run-state-machine";
-import { DEFAULT_SCORING_WEIGHTS } from "@/domain/scoring/criteria";
+import { DEFAULT_SCORING_WEIGHTS, ScoringWeightsSchema } from "@/domain/scoring/criteria";
+import { createMemoryAnalysisRepository } from "./memory-analysis";
 import { DomainError } from "@/domain/shared/errors";
 import type { Clock } from "@/lib/clock";
 import { newId } from "@/lib/ids";
@@ -229,8 +230,10 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
       return strip(row);
     },
     async latestScore(opportunityId) {
+      // Newest first; insertion order breaks timestamp ties.
       const rows = [...db.scores.values()]
         .filter((s) => s.organizationId === org && s.opportunityId === opportunityId)
+        .reverse()
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       return rows[0] ? strip(rows[0]) : null;
     },
@@ -242,6 +245,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
     },
     async listRedTeam(opportunityId) {
       return [...db.redTeam.values()]
+        .reverse()
         .filter((r) => r.organizationId === org && r.opportunityId === opportunityId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .map(strip);
@@ -254,9 +258,32 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
     },
     async listDecisions(opportunityId) {
       return [...db.decisions.values()]
+        .reverse()
         .filter((d) => d.organizationId === org && d.opportunityId === opportunityId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .map(strip);
+    },
+    async linkEvidence(opportunityId, evidenceIds, sourceRunId) {
+      if (!mine(db.opportunities.get(opportunityId))) throw new DomainError("NOT_FOUND", "opportunity not found");
+      const current = new Set(db.opportunityEvidence.get(opportunityId) ?? []);
+      let added = 0;
+      for (const id of evidenceIds) {
+        if (!mine(db.evidence.get(id))) throw new DomainError("EVIDENCE_INTEGRITY", `unknown evidence id ${id}`);
+        if (!current.has(id)) {
+          current.add(id);
+          added++;
+          if (sourceRunId) db.opportunityEvidenceSource.set(`${opportunityId}:${id}`, sourceRunId);
+        }
+      }
+      db.opportunityEvidence.set(opportunityId, [...current]);
+      return added;
+    },
+    async updateAssessment(id, patch) {
+      const opp = mine(db.opportunities.get(id));
+      if (!opp) throw new DomainError("NOT_FOUND", "opportunity not found");
+      const updated = { ...opp, ...patch, fieldProvenance: { ...opp.fieldProvenance, ...(patch.fieldProvenance ?? {}) }, updatedAt: now() };
+      db.opportunities.set(id, updated);
+      return updated;
     },
     async setStatus(id, to) {
       const opp = mine(db.opportunities.get(id));
@@ -346,6 +373,11 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
     async getScoringWeights() {
       return { id: null, weights: db.scoring.get(org) ?? DEFAULT_SCORING_WEIGHTS };
     },
+    async updateScoringWeights(weights) {
+      ScoringWeightsSchema.parse(weights);
+      db.scoring.set(org, { ...weights });
+      return { id: null, weights };
+    },
     async getConnectorSettings() {
       return db.connectorSettings.get(org) ?? [];
     },
@@ -359,5 +391,5 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
     },
   };
 
-  return { research, evidence, signals, opportunities, ops };
+  return { research, evidence, signals, opportunities, ops, analysis: createMemoryAnalysisRepository(db, actor, clock) };
 }

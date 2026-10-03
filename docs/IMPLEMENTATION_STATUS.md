@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-10-03 · Milestone 2 complete.
+Last updated: 2026-10-03 · Milestone 3 complete.
 
 ## Repository audit (start of M1)
 
@@ -12,8 +12,8 @@ The repository was empty (no commits, no files). Everything below was built from
 |---|---|---|
 | 1 | Audit, architecture, Supabase schema, RLS, auth, domain models | ✅ done |
 | 2 | Directive, run state machine, connector interface, manual (text/URL/CSV), web search (provider adapter), e-Stat, evidence | ✅ done — live runs need credentials; mock mode for demo/E2E |
-| 3 | Signal extraction, embeddings, clustering, opportunity, scoring | ✅ MVP (deterministic + Anthropic LLM path; local embeddings) |
-| 4 | Competition, market size, business model, CFO, Red Team | 🟡 Red Team done; others M2 |
+| 3 | Signal extraction, embeddings, clustering, opportunity, scoring | ✅ semantic embeddings adapter (OpenAI) + local fallback, LLM cluster naming, editable weights |
+| 4 | Competition, market size, business model, CFO, Red Team | ✅ done (deterministic, evidence-cited; LLM competitor extraction optional) |
 | 5 | Mobile dashboard, opportunity detail, research UI | ✅ MVP |
 | 6 | FRIDAY adapter, advisor council, decision gate | 🟡 FRIDAY local adapter + decision gates done; council M3 |
 | 7 | Watchlist, daily brief, automation, cost control | 🟡 cost control (budgets, ledger, UI) done; rest M3 |
@@ -51,10 +51,8 @@ The repository was empty (no commits, no files). Everything below was built from
 ## Known limitations
 
 - Pipeline runs in-process via `after()`; long runs depend on platform max duration (queue worker in M3).
-- Local hash embeddings are lexical, so clustering groups by shared wording; sentence-level evidence can yield many small clusters. Hosted semantic embeddings are planned (M2).
-- Cluster naming is rule-based; LLM naming planned.
-- Competitor / market size / business model / CFO analyses not yet implemented (tables exist; UI shows "M2").
-- Connector settings and scoring weights are read-only in the UI (editable via SQL by admins).
+- Default local hash embeddings are lexical; set `EMBEDDING_PROVIDER=openai` for semantic clustering.
+- Market size and CFO numbers come only from user/evidence inputs or labelled default assumptions — they are only as good as those inputs.
 - No per-user rate limiter for server actions yet (budget bounds expensive work).
 - OpenAI / Gemini adapters not implemented (port ready).
 - X deletion-sync not implemented (connector is PENDING_REVIEW by default).

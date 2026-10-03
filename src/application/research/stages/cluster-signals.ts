@@ -1,15 +1,26 @@
 import type { AppContext } from "@/application/context";
-import type { StoredCluster } from "@/application/ports/repositories";
+import type { NewCluster, StoredCluster } from "@/application/ports/repositories";
+import type { AgentRunner } from "@/application/agent-runner";
 import type { BudgetTracker } from "@/domain/cost/budget";
 import { clusterSignals, type ClusterableSignal } from "@/domain/cluster/cluster";
 import type { Evidence } from "@/domain/evidence/evidence";
-import type { StoredSignal } from "@/domain/signal/signal";
+import { SIGNAL_TYPE_LABEL_JA, type StoredSignal } from "@/domain/signal/signal";
 import type { SourceItem } from "@/domain/source/source-item";
-import { nameClusterHeuristically } from "@/agents/cluster-namer";
+import { CLUSTER_NAMER, nameClusterHeuristically, nameClusterWithLLM } from "@/agents/cluster-namer";
 import { assessConfidence } from "@/application/opportunity/assess";
 
-export function signalText(s: Pick<StoredSignal, "problem" | "situation" | "desiredOutcome">): string {
-  return [s.problem, s.situation, s.desiredOutcome].filter(Boolean).join("\n");
+/** Semantic representation of a signal used for embeddings. */
+export function signalText(s: Pick<StoredSignal, "problem" | "situation" | "desiredOutcome"> & Partial<Pick<StoredSignal, "signalType" | "persona" | "currentAlternative">>): string {
+  return [
+    s.signalType ? `[${SIGNAL_TYPE_LABEL_JA[s.signalType]}]` : null,
+    s.persona ? `persona: ${s.persona}` : null,
+    s.situation ? `situation: ${s.situation}` : null,
+    s.problem,
+    s.desiredOutcome ? `wants: ${s.desiredOutcome}` : null,
+    s.currentAlternative ? `alternative: ${s.currentAlternative}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** Embeds signals (paid provider within budget, else local) and stores vectors. */
@@ -63,6 +74,7 @@ export async function buildClusters(
     evidence: Map<string, Evidence>;
     sourceItems: Map<string, SourceItem>;
     qualityOf: (connectorId: string) => number;
+    runner?: AgentRunner;
   },
 ): Promise<StoredCluster[]> {
   const sourceOf = (evidenceId: string) => {
@@ -92,18 +104,40 @@ export async function buildClusters(
   const byId = new Map(input.signals.map((s) => [s.id, s]));
   const now = ctx.clock.now().toISOString();
 
-  return ctx.repos.signals.insertClusters(
-    drafts.map((d) => {
+  const rows: NewCluster[] = [];
+  for (const d of drafts) {
+    {
       const members = d.signalIds.map((id) => byId.get(id)!);
       const evidence = [...new Set(members.flatMap((m) => m.evidenceIds))]
         .map((id) => input.evidence.get(id))
         .filter((e): e is Evidence => Boolean(e));
-      const naming = nameClusterHeuristically({
+      let naming = nameClusterHeuristically({
         dominantType: d.dominantType,
         problems: members.map((m) => m.problem),
         sourceCount: d.sourceCount,
       });
-      return {
+      let namingMethod: "rule" | "ai" = "rule";
+      // LLM naming only for multi-signal clusters, within budget and call limits.
+      if (ctx.ai?.isLLM && input.runner && members.length >= 2) {
+        const ai = ctx.ai;
+        const out = await input.runner.run({
+          agentName: CLUSTER_NAMER,
+          provider: ai.id,
+          model: ai.model,
+          input: { signalIds: d.signalIds },
+          estimateUsd: ai.estimateCost(members.reduce((n, m) => n + m.problem.length, 300), 400),
+          researchRunId: input.runId,
+          execute: async () => {
+            const r = await nameClusterWithLLM(ai, members.map((m) => m.problem));
+            return { output: r.naming, ...r.llm };
+          },
+        });
+        if (out.status === "SUCCEEDED") {
+          naming = { name: `${SIGNAL_TYPE_LABEL_JA[d.dominantType]}: ${out.output.name}`.slice(0, 120), summary: out.output.summary };
+          namingMethod = "ai";
+        }
+      }
+      rows.push({
         researchRunId: input.runId,
         name: naming.name,
         summary: naming.summary,
@@ -117,11 +151,12 @@ export async function buildClusters(
         painScore: d.painScore,
         paySignalScore: d.paySignalScore,
         confidence: assessConfidence(evidence, input.sourceItems, input.qualityOf, now).level,
-        namingMethod: "rule" as const,
+        namingMethod,
         signalIds: d.signalIds,
         centroid: d.centroid,
         similarities: d.similarities,
-      };
-    }),
-  );
+      });
+    }
+  }
+  return ctx.repos.signals.insertClusters(rows);
 }

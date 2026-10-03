@@ -38,6 +38,8 @@ export type ResearchRunStats = {
   connectorsFailed?: string[];
   connectorsSkipped?: string[];
   budgetStops?: string[];
+  /** Evidence linked to the originating opportunity (additional research). */
+  linkedToOpportunity?: number;
 };
 
 export type ResearchRun = {

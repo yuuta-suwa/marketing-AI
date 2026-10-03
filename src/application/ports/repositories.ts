@@ -1,3 +1,7 @@
+import type { CfoAnalysis, CfoInputs, InputProvenance } from "@/domain/analysis/cfo";
+import type { Experiment, ExperimentDecision, ExperimentDraft, ExperimentStatus } from "@/domain/analysis/experiment";
+import type { MarketEstimateResult } from "@/domain/analysis/market-size";
+import type { BusinessModelType } from "@/domain/opportunity/business-model";
 import type { ComplianceStatus } from "@/domain/compliance/compliance";
 import type { CostEntry } from "@/domain/cost/cost";
 import type { Evidence, NewEvidence } from "@/domain/evidence/evidence";
@@ -144,6 +148,13 @@ export interface OpportunityRepository {
   recordDecision(input: Omit<StoredDecision, "id" | "createdAt" | "decidedBy">): Promise<StoredDecision>;
   listDecisions(opportunityId: string): Promise<StoredDecision[]>;
   setStatus(id: string, to: OpportunityStatus): Promise<Opportunity>;
+  /** Adds evidence links (idempotent). */
+  linkEvidence(opportunityId: string, evidenceIds: string[], sourceRunId?: string): Promise<number>;
+  /** Updates derived assessment fields after new evidence or analyses. */
+  updateAssessment(
+    id: string,
+    patch: Partial<Pick<Opportunity, "scoreTotal" | "confidence" | "competitorsSummary" | "marketSizeSummary" | "revenueModel" | "fieldProvenance">>,
+  ): Promise<Opportunity>;
 }
 
 export type AgentRunRecord = {
@@ -215,10 +226,66 @@ export interface OpsRepository {
   spendByRun(runId: string): Promise<number>;
   getBudget(): Promise<OrgBudget>;
   getScoringWeights(): Promise<{ id: string | null; weights: ScoringWeights }>;
+  /** Admin: replace the active scoring weights (validated to sum 100 in app and DB). */
+  updateScoringWeights(weights: ScoringWeights): Promise<{ id: string | null; weights: ScoringWeights }>;
   getConnectorSettings(): Promise<ConnectorSetting[]>;
   /** Admin: enable/disable a connector or make its compliance status stricter. */
   upsertConnectorSetting(input: ConnectorSetting & { displayName: string; termsNotes?: string }): Promise<void>;
   audit(action: string, entityType: string, entityId?: string, metadata?: Record<string, unknown>): Promise<void>;
+}
+
+export type StoredCompetitor = {
+  id: string;
+  opportunityId: string;
+  name: string;
+  competitorType: "DIRECT" | "INDIRECT" | "ALTERNATIVE";
+  url?: string;
+  pricing?: string;
+  positioning?: string;
+  customerComplaints?: string;
+  strengths?: string;
+  weaknesses?: string;
+  marketGap?: string;
+  epistemicStatus: "FACT" | "INFERENCE" | "HYPOTHESIS" | "ASSUMPTION";
+  sourceEvidenceIds: string[];
+  createdAt: string;
+};
+
+export type StoredMarketEstimate = MarketEstimateResult & {
+  id: string;
+  opportunityId: string;
+  notes?: string;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type StoredBusinessModel = {
+  id: string;
+  opportunityId: string;
+  modelType: BusinessModelType;
+  description?: string;
+  fitScore: number;
+  rationale?: string;
+  risks?: string;
+  isPrimary: boolean;
+  unitEconomics: Partial<CfoAnalysis> & { inputs?: CfoInputs; provenance?: InputProvenance };
+  createdBy: string;
+  createdAt: string;
+};
+
+export interface AnalysisRepository {
+  replaceCompetitors(opportunityId: string, rows: Array<Omit<StoredCompetitor, "id" | "createdAt" | "opportunityId">>, options?: { keepManual?: boolean }): Promise<StoredCompetitor[]>;
+  addCompetitor(opportunityId: string, row: Omit<StoredCompetitor, "id" | "createdAt" | "opportunityId">): Promise<StoredCompetitor>;
+  listCompetitors(opportunityId: string): Promise<StoredCompetitor[]>;
+  saveMarketEstimate(opportunityId: string, estimate: MarketEstimateResult & { notes?: string; createdBy: string }): Promise<StoredMarketEstimate>;
+  listMarketEstimates(opportunityId: string): Promise<StoredMarketEstimate[]>;
+  replaceBusinessModels(opportunityId: string, rows: Array<Omit<StoredBusinessModel, "id" | "createdAt" | "opportunityId">>): Promise<StoredBusinessModel[]>;
+  listBusinessModels(opportunityId: string): Promise<StoredBusinessModel[]>;
+  setUnitEconomics(businessModelId: string, unitEconomics: StoredBusinessModel["unitEconomics"]): Promise<void>;
+  createExperiment(opportunityId: string, draft: ExperimentDraft): Promise<Experiment>;
+  getExperiment(id: string): Promise<Experiment | null>;
+  listExperiments(filter: { opportunityId?: string; limit?: number }): Promise<Experiment[]>;
+  updateExperiment(id: string, patch: { status?: ExperimentStatus; resultSummary?: string; decision?: ExperimentDecision; approve?: boolean; decide?: boolean }): Promise<Experiment>;
 }
 
 export type Repositories = {
@@ -227,4 +294,5 @@ export type Repositories = {
   signals: SignalRepository;
   opportunities: OpportunityRepository;
   ops: OpsRepository;
+  analysis: AnalysisRepository;
 };

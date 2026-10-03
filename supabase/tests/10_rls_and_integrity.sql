@@ -263,4 +263,53 @@ select tests.expect_error($$
      and organization_id = (select org_a from ids)
 $$, 'last owner cannot be removed');
 
+
+-- ---------------------------------------------------------------------------
+-- M3: experiments state machine + human attribution; analysis rows
+-- ---------------------------------------------------------------------------
+select tests.login('00000000-0000-0000-0000-00000000000a');
+insert into public.experiments (id, organization_id, opportunity_id, title, hypothesis, deadline)
+select '80000000-0000-0000-0000-000000000001', org_a, '70000000-0000-0000-0000-000000000001', 'LP', 'h', '2026-12-01' from ids;
+select tests.expect_error($$
+  insert into public.experiments (organization_id, opportunity_id, title, hypothesis, status)
+  select org_a, '70000000-0000-0000-0000-000000000001', 'x', 'h', 'RUNNING' from ids
+$$, 'experiments must start as PROPOSED');
+select tests.expect_error($$
+  update public.experiments set status = 'RUNNING' where id = '80000000-0000-0000-0000-000000000001'
+$$, 'experiment cannot skip approval');
+select tests.expect_error($$
+  update public.experiments set status = 'APPROVED', approved_by = '00000000-0000-0000-0000-00000000000b'
+   where id = '80000000-0000-0000-0000-000000000001'
+$$, 'experiment approval cannot be attributed to someone else');
+update public.experiments set status = 'APPROVED', approved_by = '00000000-0000-0000-0000-00000000000a'
+ where id = '80000000-0000-0000-0000-000000000001';
+update public.experiments set status = 'RUNNING' where id = '80000000-0000-0000-0000-000000000001';
+select tests.expect_error($$
+  update public.experiments set status = 'COMPLETED' where id = '80000000-0000-0000-0000-000000000001'
+$$, 'completed experiment requires a result');
+update public.experiments set status = 'COMPLETED', result_summary = 'CVR 6%', decision = 'CONTINUE',
+       decided_by = '00000000-0000-0000-0000-00000000000a'
+ where id = '80000000-0000-0000-0000-000000000001';
+select tests.expect_count($$select count(*) from public.experiments where status = 'COMPLETED' and ended_at is not null$$, 1,
+  'experiment completes with result and timestamps');
+
+insert into public.business_models (organization_id, opportunity_id, model_type, is_primary, created_by)
+select org_a, '70000000-0000-0000-0000-000000000001', 'SUBSCRIPTION', true, 'test' from ids;
+select tests.expect_error($$
+  insert into public.business_models (organization_id, opportunity_id, model_type, is_primary, created_by)
+  select org_a, '70000000-0000-0000-0000-000000000001', 'SERVICE', true, 'test' from ids
+$$, 'only one primary business model per opportunity');
+reset role;
+
+-- A member (not admin) may regenerate analysis rows but not delete evidence.
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-00000000000d', 'dave@example.com');
+insert into public.organization_members (organization_id, user_id, role)
+select org_a, '00000000-0000-0000-0000-00000000000d', 'member' from ids;
+select tests.login('00000000-0000-0000-0000-00000000000d');
+delete from public.business_models where opportunity_id = '70000000-0000-0000-0000-000000000001';
+select tests.expect_count($$select count(*) from public.business_models$$, 0, 'member can replace business model analysis');
+delete from public.evidence;
+select tests.expect_count($$select count(*) from public.evidence$$, 1, 'member cannot delete evidence');
+reset role;
+
 \echo 'ALL DATABASE TESTS PASSED'

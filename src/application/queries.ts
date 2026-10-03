@@ -70,15 +70,20 @@ export async function getOpportunityDetail(ctx: AppContext, opportunityId: strin
   const opportunity = await ctx.repos.opportunities.getOpportunity(opportunityId);
   if (!opportunity) throw new DomainError("NOT_FOUND", "Opportunity not found");
   const evidenceIds = await ctx.repos.opportunities.listOpportunityEvidenceIds(opportunityId);
-  const [evidence, score, redTeam, decisions, cluster, relatedRuns] = await Promise.all([
+  const [evidence, score, redTeam, decisions, cluster, relatedRuns, competitors, marketEstimates, businessModels, experiments] = await Promise.all([
     ctx.repos.evidence.listEvidence({ ids: evidenceIds }),
     ctx.repos.opportunities.latestScore(opportunityId),
     ctx.repos.opportunities.listRedTeam(opportunityId),
     ctx.repos.opportunities.listDecisions(opportunityId),
     ctx.repos.signals.getCluster(opportunity.clusterId),
     ctx.repos.research.listRuns({ opportunityId }),
+    ctx.repos.analysis.listCompetitors(opportunityId),
+    ctx.repos.analysis.listMarketEstimates(opportunityId),
+    ctx.repos.analysis.listBusinessModels(opportunityId),
+    ctx.repos.analysis.listExperiments({ opportunityId }),
   ]);
-  const sourceItems = await ctx.repos.evidence.listSourceItems(opportunity.researchRunId);
+  const runIds = [...new Set(evidence.map((e) => e.researchRunId))];
+  const sourceItems = (await Promise.all(runIds.map((r) => ctx.repos.evidence.listSourceItems(r)))).flat();
   const sourceById = new Map(sourceItems.map((s) => [s.id, s]));
   return {
     opportunity,
@@ -88,6 +93,12 @@ export async function getOpportunityDetail(ctx: AppContext, opportunityId: strin
     decisions,
     cluster,
     relatedRuns,
+    competitors,
+    marketEstimates,
+    businessModels,
+    experiments,
+    canDecide: can(ctx.actor, "opportunity.decide"),
+    canAnalyze: can(ctx.actor, "analysis.run"),
   };
 }
 
