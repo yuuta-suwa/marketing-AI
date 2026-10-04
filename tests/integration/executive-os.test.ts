@@ -52,12 +52,15 @@ describe("FRIDAY executive flow", () => {
     expect(ctx.db.audit.filter((a) => a.action.startsWith("friday.")).length).toBeGreaterThan(3);
   });
 
-  it("FRIDAY research command returns a run link and background work", async () => {
+  it("FRIDAY research command returns a run link and only enqueues the work", async () => {
     const ctx = testContext();
     const r = await say(ctx, "訪日客の移動の不満から事業機会を探して");
     expect(r.intent).toBe("RESEARCH");
     expect(r.link?.href).toMatch(/^\/research\/runs\//);
-    expect(typeof r.background).toBe("function");
+    const runId = r.link!.href.split("/").pop()!;
+    const jobs = await ctx.repos.jobs.list({ researchRunId: runId });
+    expect(jobs.map((j) => [j.jobType, j.status])).toEqual([["RESEARCH_COLLECTION", "QUEUED"]]);
+    expect((await ctx.repos.research.getRun(runId))?.status).toBe("QUEUED");
     expect((await say(ctx, "Red Team")).message).toContain("Current Context");
   });
 });

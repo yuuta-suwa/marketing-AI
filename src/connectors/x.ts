@@ -1,5 +1,5 @@
 import type { ComplianceProfile } from "@/domain/compliance/compliance";
-import type { ConnectorContext, ConnectorHealth, MarketConnector } from "@/domain/connector/connector";
+import { ConnectorError, type ConnectorContext, type ConnectorHealth, type MarketConnector } from "@/domain/connector/connector";
 import type { CostEstimate } from "@/domain/cost/cost";
 import type { ResearchDirective } from "@/domain/research/directive";
 import type { RawSourceItem } from "@/domain/source/source-item";
@@ -68,6 +68,19 @@ export class XConnector implements MarketConnector {
       engagement: t.public_metrics,
       metadata: { provider: "x-api-v2" },
     }));
+  }
+
+  /** Smallest permitted page (10 posts) — consumes read quota on metered tiers. */
+  async smokeTest(signal?: AbortSignal): Promise<{ detail: string; costUsd: number }> {
+    const token = this.env_("X_BEARER_TOKEN");
+    if (!token) throw new ConnectorError(this.id, "X_BEARER_TOKEN not configured", false);
+    const params = new URLSearchParams({ query: "travel -is:retweet", max_results: "10" });
+    const data = await fetchJson<XSearchResponse>(this.id, this.fetchImpl, `https://api.x.com/2/tweets/search/recent?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal,
+      timeoutMs: 10_000,
+    });
+    return { detail: `${data.data?.length ?? 0} post(s)`, costUsd: 0 };
   }
 
   async healthCheck(): Promise<ConnectorHealth> {

@@ -11,6 +11,7 @@ import { runRedTeam } from "@/application/opportunity/red-team";
 import { parseManualInput } from "@/application/research/manual-input";
 import { OPPORTUNITY_STATUSES } from "@/domain/opportunity/status";
 import { buildAppContext, requireSession } from "@/infrastructure/server-context";
+import { kickEmbeddedWorker } from "@/infrastructure/worker/embedded";
 import { toActionError, type ActionState } from "./result";
 
 const IdSchema = z.uuid();
@@ -67,6 +68,7 @@ export async function additionalResearchAction(_prev: ActionState, formData: For
       manualItems: manual.trim() ? parseManualInput(manual) : undefined,
     });
     runId = result.runId;
+    kickEmbeddedWorker();
   } catch (e) {
     return toActionError(e);
   }

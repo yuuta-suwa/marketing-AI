@@ -17,6 +17,7 @@ export const ACTIONS = {
   "scoring.configure": "admin",
   "member.manage": "admin",
   "audit.read": "admin",
+  "job.manage": "admin",
   "data.delete": "admin",
   "organization.delete": "owner",
 } as const satisfies Record<string, OrgRole>;

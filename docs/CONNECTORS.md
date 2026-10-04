@@ -54,3 +54,9 @@ Organization overrides (`connectors` table: `enabled`, `compliance_status`) can 
 3. Register it in `src/connectors/registry.ts`.
 4. Add a mocked-HTTP test in `tests/integration/connectors.test.ts`.
 5. Document it here and in `.env.example`; review per [COMPLIANCE.md](COMPLIANCE.md).
+
+## Live readiness (Phase 5)
+
+Each implemented connector has credential validation (`missingEnvFor`), a cheap `healthCheck()` and a `smokeTest()` that performs **one minimal live request** (Brave: `q=travel&count=1`; e-Stat: `getStatsList limit=1`; X: 10 posts — the API minimum; Anthropic: the free `count_tokens` endpoint). Readiness states: `LIVE_READY`, `CONFIGURED_UNTESTED`, `READY_NEEDS_CREDENTIALS`, `PENDING_COMPLIANCE` (never smoke-tested), `NOT_IMPLEMENTED`, `MOCK`, `FAILED` (with error class `AUTH | RATE_LIMITED | TIMEOUT | UPSTREAM_5XX | NETWORK | BAD_REQUEST | INVALID_RESPONSE`). Run `npm run smoke:live`.
+
+During research: per-request timeout, bounded retry with exponential backoff (rate limits wait 4× longer, never bypassed), `MAX_SEARCH_REQUESTS_PER_RUN`, errors stored as `[CLASS] message` in `connector_runs`, cost per request in `connector_runs.cost_usd` and `cost_ledger` (MOCK requests record $0). Settings › Connectors shows mode (LIVE/MOCK/DISABLED), readiness, compliance, credentials, health, last success, last error, requests today and estimated cost today.

@@ -1,5 +1,5 @@
 import type { ComplianceProfile } from "@/domain/compliance/compliance";
-import type { ConnectorContext, ConnectorHealth, MarketConnector } from "@/domain/connector/connector";
+import { ConnectorError, type ConnectorContext, type ConnectorHealth, type MarketConnector } from "@/domain/connector/connector";
 import type { CostEstimate } from "@/domain/cost/cost";
 import type { ResearchDirective } from "@/domain/research/directive";
 import type { RawSourceItem } from "@/domain/source/source-item";
@@ -91,6 +91,22 @@ export class EStatConnector implements MarketConnector {
         metadata: { provider: "e-stat", attribution: "出典：政府統計の総合窓口(e-Stat)" },
       } satisfies RawSourceItem;
     });
+  }
+
+  async smokeTest(signal?: AbortSignal): Promise<{ detail: string; costUsd: number }> {
+    const appId = this.env_("ESTAT_APP_ID");
+    if (!appId) throw new ConnectorError(this.id, "ESTAT_APP_ID not configured", false);
+    const params = new URLSearchParams({ appId, lang: "J", searchWord: "観光", limit: "1" });
+    const data = await fetchJson<EStatListResponse>(this.id, this.fetchImpl, `https://api.e-stat.go.jp/rest/3.0/app/json/getStatsList?${params}`, {
+      signal,
+      timeoutMs: 10_000,
+    });
+    const result = data.GET_STATS_LIST?.RESULT;
+    // STATUS 0-2 are success codes; 100+ are errors (e.g. invalid appId).
+    if (!result || result.STATUS > 2) {
+      throw new ConnectorError(this.id, `e-Stat error ${result?.STATUS ?? "?"}: ${result?.ERROR_MSG ?? "no RESULT"}`, false, result?.STATUS === 100 ? 401 : undefined);
+    }
+    return { detail: `STATUS ${result.STATUS}`, costUsd: 0 };
   }
 
   async healthCheck(): Promise<ConnectorHealth> {

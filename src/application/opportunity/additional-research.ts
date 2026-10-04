@@ -1,6 +1,6 @@
 import type { AppContext } from "@/application/context";
 import { createResearch, toManualItems } from "@/application/research/create-research";
-import { runResearchPipeline, type PipelineResult } from "@/application/research/pipeline";
+import { dispatchResearch, type ResearchDispatch } from "@/application/research/dispatch";
 import { authorize } from "@/domain/auth/authorization";
 import type { ResearchRequest } from "@/domain/research/directive";
 import type { ResearchRunType } from "@/domain/research/run";
@@ -41,7 +41,7 @@ export async function startAdditionalResearch(
     note?: string;
     manualItems?: ResearchRequest["manualItems"];
   },
-): Promise<PipelineResult> {
+): Promise<ResearchDispatch> {
   authorize(ctx.actor, "analysis.run");
   const opp = await ctx.repos.opportunities.getOpportunity(input.opportunityId);
   if (!opp) throw new DomainError("NOT_FOUND", "Opportunity not found");
@@ -57,5 +57,6 @@ export async function startAdditionalResearch(
     parentRunId: opp.researchRunId,
     opportunityId: opp.id,
   });
-  return runResearchPipeline(ctx, run.id, { manualItems: toManualItems(input.manualItems) });
+  // Queued: the worker runs the stages; results are incorporated into the opportunity.
+  return dispatchResearch(ctx, run.id, { manualItems: toManualItems(input.manualItems) });
 }

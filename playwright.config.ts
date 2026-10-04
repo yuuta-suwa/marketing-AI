@@ -34,6 +34,8 @@ export default defineConfig({
     env: {
       MRO_DEMO_MODE: "true",
       CONNECTOR_MOCK_MODE: "true",
+      // Explicit test-deployment opt-in: `next start` is a production build.
+      ENABLE_MOCK_CONNECTORS: "true",
       NEXT_PUBLIC_SUPABASE_URL: "",
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
       ANTHROPIC_API_KEY: "",

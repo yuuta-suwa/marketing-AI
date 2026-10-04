@@ -13,10 +13,12 @@ import type {
 import type { Actor } from "@/domain/auth/authorization";
 import { assertVerbatim } from "@/domain/evidence/evidence";
 import { assertOpportunityTransition, CEO_GATED_STATUSES, HUMAN_GATED_STATUSES } from "@/domain/opportunity/status";
-import { assertRunTransition } from "@/domain/research/run-state-machine";
+import { RUN_ACTION_JA, RUN_PROGRESS } from "@/domain/research/progress";
+import { assertRunTransition, isTerminalRunStatus } from "@/domain/research/run-state-machine";
 import { DEFAULT_SCORING_WEIGHTS, ScoringWeightsSchema } from "@/domain/scoring/criteria";
 import { createMemoryAnalysisRepository } from "./memory-analysis";
 import { createMemoryExecutiveRepository } from "./memory-executive";
+import { createMemoryJobQueue } from "./memory-jobs";
 import { DomainError } from "@/domain/shared/errors";
 import type { Clock } from "@/lib/clock";
 import { newId } from "@/lib/ids";
@@ -35,6 +37,16 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
   const now = () => clock.now().toISOString();
   const mine = <T extends { organizationId: string }>(row: T | undefined): T | undefined =>
     row && row.organizationId === org ? row : undefined;
+
+  /** Only partial output of an unfinished run with no opportunities may be discarded. */
+  const assertDiscardable = (runId: string) => {
+    const run = mine(db.runs.get(runId));
+    if (!run) throw new DomainError("NOT_FOUND", "run not found");
+    if (isTerminalRunStatus(run.status)) throw new DomainError("CONFLICT", "cannot discard data of a finished run");
+    if ([...db.opportunities.values()].some((o) => o.organizationId === org && o.researchRunId === runId)) {
+      throw new DomainError("CONFLICT", "opportunities already reference this run");
+    }
+  };
 
   const research: ResearchRepository = {
     async createDirective({ directive, parser }) {
@@ -61,6 +73,8 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
         stats: {},
         budgetLimitUsd: input.budgetLimitUsd,
         costUsd: 0,
+        progressPercent: 0,
+        currentAction: null,
         startedAt: null,
         completedAt: null,
         createdBy: actor.userId,
@@ -89,6 +103,8 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
         degraded: patch.degraded ?? run.degraded,
         stats: patch.stats ? { ...patch.stats } : run.stats,
         costUsd: patch.costUsd ?? run.costUsd,
+        progressPercent: patch.progressPercent ?? (to !== run.status ? RUN_PROGRESS[to] : run.progressPercent),
+        currentAction: patch.currentAction !== undefined ? patch.currentAction : to !== run.status ? RUN_ACTION_JA[to] : run.currentAction,
         startedAt: to === "COLLECTING" && !run.startedAt ? now() : run.startedAt,
         completedAt: ["COMPLETED", "PARTIAL_SUCCESS", "FAILED", "CANCELLED"].includes(to) ? now() : run.completedAt,
       };
@@ -119,14 +135,24 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
       return [...db.sourceItems.values()].filter((s) => s.organizationId === org && s.researchRunId === runId).map(strip);
     },
     async insertEvidence(items) {
-      return items.map((e) => {
+      // Validate everything first: the batch is atomic like a single SQL INSERT.
+      for (const e of items) {
         const source = mine(db.sourceItems.get(e.sourceItemId));
         if (!source) throw new DomainError("EVIDENCE_INTEGRITY", "evidence references unknown source item");
         assertVerbatim(e.evidenceText, source.body);
+      }
+      const seen = new Set([...db.evidence.values()].map((x) => `${x.sourceItemId}\u0000${x.evidenceText}`));
+      const out = [];
+      for (const e of items) {
+        const key = `${e.sourceItemId}\u0000${e.evidenceText}`;
+        if (seen.has(key)) continue; // unique (source_item_id, md5(evidence_text))
+        seen.add(key);
+        const source = db.sourceItems.get(e.sourceItemId)!;
         const row = { ...e, sourceUrl: e.sourceUrl ?? source.sourceUrl, id: newId(), organizationId: org };
         db.evidence.set(row.id, row);
-        return strip(row);
-      });
+        out.push(strip(row));
+      }
+      return out;
     },
     async listEvidence(filter) {
       const ids = filter.ids ? new Set(filter.ids) : null;
@@ -139,6 +165,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
   const signals: SignalRepository = {
     async insertSignals(rows: NewSignal[]) {
       return rows.map((s) => {
+        if (s.evidenceIds.length === 0) throw new DomainError("EVIDENCE_INTEGRITY", "a signal requires evidence");
         for (const id of s.evidenceIds) {
           if (!mine(db.evidence.get(id))) throw new DomainError("EVIDENCE_INTEGRITY", `unknown evidence id ${id}`);
         }
@@ -146,6 +173,18 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
         db.signals.set(row.id, row);
         return strip(row);
       });
+    },
+    async discardRunSignals(runId) {
+      assertDiscardable(runId);
+      const ids = [...db.signals.values()].filter((x) => x.organizationId === org && x.researchRunId === runId).map((x) => x.id);
+      for (const id of ids) db.signals.delete(id);
+      return ids.length;
+    },
+    async discardRunClusters(runId) {
+      assertDiscardable(runId);
+      const ids = [...db.clusters.values()].filter((x) => x.organizationId === org && x.researchRunId === runId).map((x) => x.id);
+      for (const id of ids) db.clusters.delete(id);
+      return ids.length;
     },
     async setEmbeddings(rows) {
       for (const r of rows) {
@@ -200,6 +239,10 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
   const opportunities: OpportunityRepository = {
     async createOpportunity({ researchRunId, clusterId, draft, confidence, scoreTotal, momentum }) {
       if (!mine(db.clusters.get(clusterId))) throw new DomainError("EVIDENCE_INTEGRITY", "unknown cluster");
+      if (draft.evidenceIds.length === 0) throw new DomainError("EVIDENCE_INTEGRITY", "an opportunity requires evidence");
+      if ([...db.opportunities.values()].some((o) => o.clusterId === clusterId)) {
+        throw new DomainError("CONFLICT", "an opportunity already exists for this cluster");
+      }
       for (const id of draft.evidenceIds) {
         if (!mine(db.evidence.get(id))) throw new DomainError("EVIDENCE_INTEGRITY", `unknown evidence id ${id}`);
       }
@@ -427,6 +470,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
   };
 
   return {
+    jobs: createMemoryJobQueue(db, actor, clock),
     research,
     evidence,
     signals,

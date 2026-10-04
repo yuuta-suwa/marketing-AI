@@ -5,6 +5,8 @@ import { centroid, cosineSimilarity } from "./similarity";
 
 export type ClusterableSignal = {
   id: string;
+  /** Content-based ordering key (e.g. the signal text) so results do not depend on random ids. */
+  orderKey?: string;
   signalType: SignalType;
   category?: string;
   embedding: number[];
@@ -47,12 +49,12 @@ export type ClusterOptions = {
 
 /**
  * MVP clustering: single-pass centroid clustering over embeddings, with a
- * rule-based category guard. Deterministic for a given input order; signals
- * are sorted by id first so results are reproducible.
+ * rule-based category guard. Signals are sorted by content (orderKey, then id)
+ * first, so the same signals cluster the same way whatever their random ids.
  */
 export function clusterSignals(signals: readonly ClusterableSignal[], options: ClusterOptions = {}): ClusterDraft[] {
   const threshold = options.threshold ?? 0.55;
-  const sorted = [...signals].sort((a, b) => a.id.localeCompare(b.id));
+  const sorted = [...signals].sort((a, b) => (a.orderKey ?? "").localeCompare(b.orderKey ?? "") || a.id.localeCompare(b.id));
   const groups: Array<{ members: ClusterableSignal[]; centroid: number[]; category?: string }> = [];
 
   for (const s of sorted) {

@@ -88,6 +88,12 @@ export function markSynthetic(connector: MarketConnector): MarketConnector {
     // Mocked connectors cost nothing and touch no external service: on by default
     // (the compliance gate still applies, so PENDING_REVIEW sources stay off).
     enabledByDefault: true,
+    synthetic: true,
+    // Canned responses touch no paid API: never record spend for them.
+    async estimateCost() {
+      return { amountUsd: 0, basis: "MOCK connector (no external request)" };
+    },
+    smokeTest: undefined,
     async search(directive: ResearchDirective, context: ConnectorContext): Promise<RawSourceItem[]> {
       const items = await search(directive, context);
       return items.map((item) => ({

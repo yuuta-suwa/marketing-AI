@@ -18,6 +18,8 @@ export async function createResearch(
   const parsed = ResearchRequestSchema.parse(request);
   // The directive parser is optional AI work: skip the LLM if it would exceed the budget.
   let provider = ctx.ai;
+  // The directive parse is the run's first LLM call: it counts toward MAX_LLM_CALLS_PER_RUN.
+  if (ctx.options.limits.maxLlmCallsPerRun < 1) provider = null;
   if (provider?.isLLM) {
     const budget = await createBudgetTracker(ctx, parsed.budgetLimitUsd);
     if (!budget.check(provider.estimateCost(parsed.input.length + 1500, 800)).allowed) provider = null;

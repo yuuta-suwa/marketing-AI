@@ -11,6 +11,8 @@ export type RuntimeMode = "supabase" | "demo" | "unconfigured";
  */
 export function runtimeMode(): RuntimeMode {
   if (supabasePublicConfig()) return "supabase";
-  if (process.env.MRO_DEMO_MODE === "true") return "demo";
+  // A production build honours demo mode only for an explicit test deployment
+  // (ENABLE_MOCK_CONNECTORS=true, e.g. E2E); validateEnvironment reports misuse.
+  if (process.env.MRO_DEMO_MODE === "true" && (process.env.NODE_ENV !== "production" || process.env.ENABLE_MOCK_CONNECTORS === "true")) return "demo";
   return "unconfigured";
 }

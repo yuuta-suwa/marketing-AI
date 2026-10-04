@@ -1,8 +1,7 @@
 import "server-only";
 import { timingSafeEqual } from "node:crypto";
-import { DEFAULT_PIPELINE_OPTIONS, type AppContext } from "@/application/context";
+import type { AppContext } from "@/application/context";
 import type { SystemDirectory, SystemContextFactory } from "@/application/executive/scheduled";
-import { createDefaultConnectorRegistry } from "@/connectors/registry";
 import { systemClock } from "@/lib/clock";
 import { sha256Hex } from "@/lib/hash";
 import { createLogger } from "@/lib/logger";
@@ -10,8 +9,11 @@ import { LocalHashEmbeddingProvider } from "./ai/local-hash-embeddings";
 import { createAIProvider, createEmbeddingProvider } from "./ai/provider-factory";
 import { createMemoryRepositories } from "./memory/memory-repositories";
 import { runtimeMode } from "./runtime-mode";
-import { demoDatabase } from "./server-context";
+import { createConnectorRegistryForEnv, demoDatabase, pipelineOptionsFromEnv } from "./server-context";
 import { createSupabaseAdminClient } from "./supabase/admin-client";
+import { SupabaseJobStore } from "./supabase/supabase-jobs";
+import { MemoryJobStore } from "./memory/memory-jobs";
+import type { JobStore } from "@/application/jobs/ports";
 import { mapWatchlist } from "./supabase/supabase-executive";
 import { createSupabaseRepositories } from "./supabase/supabase-repositories";
 
@@ -28,21 +30,22 @@ function baseContext(repos: AppContext["repos"], organizationId: string, userId:
   return {
     actor: { userId, organizationId, role: "admin" },
     repos,
-    connectors: createDefaultConnectorRegistry(),
+    connectors: createConnectorRegistryForEnv(),
     ai: createAIProvider(),
     embeddings: createEmbeddingProvider(),
     fallbackEmbeddings: new LocalHashEmbeddingProvider(),
     hash: sha256Hex,
     clock: systemClock,
     logger: createLogger({ organization_id: organizationId, job: "system" }),
-    options: { ...DEFAULT_PIPELINE_OPTIONS },
+    options: pipelineOptionsFromEnv(),
   };
 }
 
-export function systemJobDeps(): { dir: SystemDirectory; ctxFor: SystemContextFactory } | null {
+export function systemJobDeps(): { dir: SystemDirectory; ctxFor: SystemContextFactory; store: JobStore } | null {
   if (runtimeMode() === "demo") {
     const db = demoDatabase();
     return {
+      store: new MemoryJobStore(db, systemClock),
       dir: {
         listActiveWatchlists: async () => [...db.watchlists.values()].filter((w) => w.active),
         listBriefRecipients: async () => {
@@ -56,6 +59,7 @@ export function systemJobDeps(): { dir: SystemDirectory; ctxFor: SystemContextFa
   const admin = createSupabaseAdminClient();
   if (!admin) return null;
   return {
+    store: new SupabaseJobStore(admin),
     dir: {
       async listActiveWatchlists() {
         const res = await admin.from("watchlists").select().eq("active", true).limit(5000);

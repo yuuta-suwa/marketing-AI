@@ -8,6 +8,10 @@ import { MemoryDatabase } from "@/infrastructure/memory/memory-db";
 import { createMemoryRepositories } from "@/infrastructure/memory/memory-repositories";
 import { sha256Hex } from "@/lib/hash";
 import { silentLogger } from "@/lib/logger";
+import { createJobHandlers } from "@/application/jobs/handlers";
+import { JobWorker, type JobHandlers, type WorkerOptions } from "@/application/jobs/worker";
+import type { Job } from "@/domain/jobs/job";
+import { MemoryJobStore } from "@/infrastructure/memory/memory-jobs";
 
 export const NOW = new Date("2026-10-01T00:00:00Z");
 export const ALICE: Actor = { userId: "u-alice", organizationId: "org-a", role: "owner" };
@@ -41,4 +45,36 @@ export function testContext(
     logger: silentLogger,
     options: { ...DEFAULT_PIPELINE_OPTIONS },
   };
+}
+
+export const TEST_WORKER_OPTIONS: WorkerOptions = {
+  workerId: "test-worker",
+  leaseSeconds: 60,
+  heartbeatMs: 60_000,
+  batchSize: 5,
+  backoff: { baseSeconds: 10, maxSeconds: 60, random: () => 0 },
+};
+
+/** Worker over the test's memory DB; each job runs as its owner (system repos, org-scoped). */
+export function testWorker(
+  ctx: AppContext & { db: MemoryDatabase },
+  overrides: { handlers?: JobHandlers; options?: Partial<WorkerOptions>; store?: MemoryJobStore } = {},
+) {
+  const store = overrides.store ?? new MemoryJobStore(ctx.db, ctx.clock);
+  const worker = new JobWorker({
+    store,
+    handlers: overrides.handlers ?? createJobHandlers(),
+    logger: silentLogger,
+    options: { ...TEST_WORKER_OPTIONS, ...overrides.options },
+    contextFor: async (job: Job) => {
+      const actor: Actor = { userId: job.userId ?? ctx.actor.userId, organizationId: job.organizationId, role: ctx.actor.role };
+      return { ...ctx, actor, repos: createMemoryRepositories(ctx.db, actor, ctx.clock, { system: true }) };
+    },
+  });
+  return { worker, store };
+}
+
+/** Executes everything currently claimable (chained stages included). */
+export async function runQueuedJobs(ctx: AppContext & { db: MemoryDatabase }): Promise<number> {
+  return testWorker(ctx).worker.drain();
 }

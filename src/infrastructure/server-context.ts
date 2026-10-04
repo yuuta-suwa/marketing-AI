@@ -7,6 +7,8 @@ import { DomainError } from "@/domain/shared/errors";
 import { systemClock } from "@/lib/clock";
 import { sha256Hex } from "@/lib/hash";
 import { createLogger } from "@/lib/logger";
+import { hardLimitsFromEnv } from "@/application/limits";
+import { resolveMockConnectorOptions } from "./env-contract";
 import { LocalHashEmbeddingProvider } from "./ai/local-hash-embeddings";
 import { createAIProvider, createEmbeddingProvider } from "./ai/provider-factory";
 import { MemoryDatabase } from "./memory/memory-db";
@@ -58,11 +60,34 @@ export async function requireSession(): Promise<Session> {
   return session;
 }
 
-/** Mock connectors are allowed only in demo mode, never with real tenants/data. */
-export function connectorMockOptions(mode: Session["mode"]): { fail?: string[] } | undefined {
-  if (mode !== "demo" || process.env.CONNECTOR_MOCK_MODE !== "true") return undefined;
-  const fail = (process.env.CONNECTOR_MOCK_FAIL ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  return { fail };
+/**
+ * Mock connectors (canned responses, items labelled [MOCK]) are used only when
+ * CONNECTOR_MOCK_MODE=true AND (NODE_ENV != production OR ENABLE_MOCK_CONNECTORS=true).
+ * A production process that asks for mocks without the explicit opt-in is
+ * rejected with an error — it never silently runs on synthetic data, and
+ * missing credentials never fall back to mocks.
+ */
+export function connectorMockOptions(env: Record<string, string | undefined> = process.env): { fail?: string[] } | undefined {
+  return resolveMockConnectorOptions(env);
+}
+
+/** True when this process runs connectors in MOCK mode (persistent UI badge). */
+export function mockConnectorsActive(): boolean {
+  try {
+    return connectorMockOptions() !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/** Connector registry for any process (web, worker, cron) — one policy everywhere. */
+export function createConnectorRegistryForEnv() {
+  return createDefaultConnectorRegistry({ mock: connectorMockOptions() });
+}
+
+/** Operator limits + pipeline defaults for any process. */
+export function pipelineOptionsFromEnv(): AppContext["options"] {
+  return { ...DEFAULT_PIPELINE_OPTIONS, limits: hardLimitsFromEnv() };
 }
 
 export function buildAppContext(session: Session): AppContext {
@@ -70,13 +95,13 @@ export function buildAppContext(session: Session): AppContext {
   return {
     actor: session.actor,
     repos: session.repos,
-    connectors: createDefaultConnectorRegistry({ mock: connectorMockOptions(session.mode) }),
+    connectors: createConnectorRegistryForEnv(),
     ai: createAIProvider(),
     embeddings: createEmbeddingProvider(),
     fallbackEmbeddings: fallback,
     hash: sha256Hex,
     clock: systemClock,
     logger: createLogger({ organization_id: session.actor.organizationId }),
-    options: { ...DEFAULT_PIPELINE_OPTIONS },
+    options: pipelineOptionsFromEnv(),
   };
 }

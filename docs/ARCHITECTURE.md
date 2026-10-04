@@ -115,10 +115,12 @@ sequenceDiagram
   participant P as Pipeline
   participant C as Connectors
   participant DB as Supabase
+  participant W as Worker
   U->>A: 自然言語の指示 (+ 手動データ)
-  A->>DB: research_directives, research_runs(QUEUED)
-  A-->>U: redirect /research/runs/:id (polls)
-  A->>P: after(): runResearchPipeline
+  A->>DB: research_directives, research_runs(QUEUED), jobs(RESEARCH_COLLECTION)
+  A-->>U: redirect /research/runs/:id (Realtime / polling progress)
+  W->>DB: claim_jobs (lease, SKIP LOCKED)
+  W->>P: runResearchStage(COLLECTION → SIGNAL_EXTRACTION → CLUSTER_GENERATION → OPPORTUNITY_GENERATION), one job each
   P->>C: search() in parallel (compliance gate, timeout, bounded retry)
   C-->>P: RawSourceItem[] (Zod-validated)
   P->>DB: connector_runs (SUCCESS/FAILED/SKIPPED)
@@ -130,7 +132,7 @@ sequenceDiagram
   P->>DB: run COMPLETED / PARTIAL_SUCCESS (+reason)
 ```
 
-Execution model (MVP): the pipeline runs in-process via Next.js `after()` right after the response. This keeps the first vertical slice simple; Milestone 3 moves execution to a queue/cron worker (Supabase Queues or pg_cron) behind the same `runResearchPipeline` function.
+Execution model (Phase 5): the web request only creates the run and enqueues a job (`dispatchResearch`). A separate worker process (`scripts/worker.ts`, `src/application/jobs/worker.ts`) claims jobs from the Postgres queue (`public.jobs`) with leases + heartbeats, runs one pipeline **stage** per job and enqueues the next stage (idempotency key `research:<run>:<stage>`). Retries use exponential backoff with jitter; exhausted or non-retryable jobs are dead-lettered and the run is FAILED. Stages are idempotent (checkpoints in `run.stats.checkpoints`, unique constraints on evidence/opportunities, atomic signal/opportunity RPCs, discard of partial signals/clusters before a resumed stage), so duplicate delivery or a worker crash never duplicates business data. Progress (`progress_percent`, `current_action`) is pushed through Supabase Realtime with controlled polling fallback. Queue ports (`JobQueue`, `JobStore`) keep the provider replaceable.
 
 ## Key decisions
 
@@ -142,5 +144,7 @@ Execution model (MVP): the pipeline runs in-process via Next.js `after()` right 
 | Agents | Explicit workflow + `AgentRunner` (per-agent call cap, budget check, log) | No unbounded autonomous loops |
 | Embeddings | `vector(1536)` + HNSW; local feature-hash provider by default | Works offline at zero cost; 1536 matches common hosted models for later swap |
 | Clustering | Single-pass centroid clustering + category guard + rule naming | MVP: no heavy ML infrastructure |
-| Background work | `after()` now, queue later | Ship the vertical slice first |
+| Background work | Postgres job queue + standalone worker (Phase 5) | No dependency on HTTP request duration; leasing, retries, dead letters |
+| Prompt injection | SYSTEM / `<user_directive>` / `<external_market_data>` separation, inert JSON | External text is data, never instructions |
+| Cost safety | Org budgets capped by `MAX_*` env hard limits | Stops optional work, keeps data, PARTIAL_SUCCESS with reasons |
 | Demo mode | explicit `MRO_DEMO_MODE=true`, in-memory store | E2E and local evaluation without external services |

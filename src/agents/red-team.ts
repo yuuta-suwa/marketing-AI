@@ -10,6 +10,7 @@ import {
   type RedTeamReview,
 } from "@/domain/opportunity/red-team";
 import type { ConfidenceLevel } from "@/domain/shared/confidence";
+import { buildAgentPrompt, composeSystem } from "@/domain/agent/prompt-boundary";
 
 export const RED_TEAM = "RedTeamAgent";
 
@@ -99,11 +100,11 @@ export async function redTeamWithLLM(
 ): Promise<{ review: RedTeamReview; llm: Omit<GenerateResult<unknown>, "output"> }> {
   const res = await provider.generate({
     agent: RED_TEAM,
-    system: SYSTEM,
-    prompt: JSON.stringify({
-      questions: RED_TEAM_QUESTIONS,
-      opportunity: ctx.opportunity,
-      evidence: ctx.evidence.map((e) => ({ id: e.id, text: e.evidenceText })),
+    system: composeSystem(SYSTEM),
+    prompt: buildAgentPrompt({
+      task: `Answer each question about the opportunity critically: ${JSON.stringify(RED_TEAM_QUESTIONS)}`,
+      directive: { opportunity: ctx.opportunity },
+      externalData: { evidence: ctx.evidence.map((e) => ({ id: e.id, text: e.evidenceText })) },
     }),
     schema: RedTeamReviewSchema,
     maxOutputTokens: 3000,

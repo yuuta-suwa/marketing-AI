@@ -61,6 +61,12 @@ export class WebSearchConnector implements MarketConnector {
     });
   }
 
+  async smokeTest(signal?: AbortSignal): Promise<{ detail: string; costUsd: number }> {
+    if (!this.provider.ping) throw new Error(`${this.provider.id} has no ping`);
+    const r = await this.provider.ping(signal);
+    return { detail: r.detail, costUsd: this.provider.costPerQueryUsd };
+  }
+
   async healthCheck(): Promise<ConnectorHealth> {
     const checkedAt = new Date().toISOString();
     if (!this.provider.configured()) {

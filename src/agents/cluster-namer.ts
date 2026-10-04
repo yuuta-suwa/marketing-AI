@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AIProvider, GenerateResult } from "@/domain/agent/ai-provider";
 import { SIGNAL_TYPE_LABEL_JA, type SignalType } from "@/domain/signal/signal";
+import { buildAgentPrompt, composeSystem } from "@/domain/agent/prompt-boundary";
 
 export const CLUSTER_NAMER = "ClusterNamerAgent";
 
@@ -54,9 +55,10 @@ export async function nameClusterWithLLM(
 ): Promise<{ naming: z.infer<typeof NamingSchema>; llm: Omit<GenerateResult<unknown>, "output"> }> {
   const res = await provider.generate({
     agent: CLUSTER_NAMER,
-    system:
+    system: composeSystem(
       "You are ClusterNamerAgent of MARKET RADAR OS. Name a group of customer problems with a short Japanese label (≤ 30 chars) and a 1–2 sentence Japanese summary. Describe only what the problems say; do not add facts, numbers or company names. Respond with JSON only.",
-    prompt: JSON.stringify({ problems: problems.slice(0, 30) }),
+    ),
+    prompt: buildAgentPrompt({ task: "Name the group of problems in <external_market_data>.", externalData: { problems: problems.slice(0, 30) } }),
     schema: NamingSchema,
     maxOutputTokens: 400,
   });

@@ -1,6 +1,5 @@
 "use server";
 
-import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -13,6 +12,7 @@ import { publishDailyBrief } from "@/application/executive/daily-brief";
 import { addWatch, checkWatchlists } from "@/application/executive/watchlist";
 import { FEEDBACK_METRICS, WATCH_TARGETS } from "@/application/ports/repositories";
 import { buildAppContext, requireSession } from "@/infrastructure/server-context";
+import { kickEmbeddedWorker } from "@/infrastructure/worker/embedded";
 import { toActionError, type ActionState } from "./result";
 
 const Id = z.uuid();
@@ -30,7 +30,7 @@ export async function fridayCommandAction(_p: FridayChatState, f: FormData): Pro
     if (!text) return { ok: false, message: "コマンドを入力してください" };
     const opportunityId = f.get("opportunityId") ? Id.parse(f.get("opportunityId")) : undefined;
     const reply = await handleFridayCommand(await ctxOf("friday.command"), { text, opportunityId });
-    if (reply.background) after(reply.background);
+    kickEmbeddedWorker();
     revalidatePath("/friday");
     return { ok: true, message: "", echo: text, reply: { intent: reply.intent, message: reply.message, link: reply.link } };
   } catch (e) {

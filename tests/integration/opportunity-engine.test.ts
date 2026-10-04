@@ -9,7 +9,7 @@ import { runResearchPipeline } from "@/application/research/pipeline";
 import { updateScoringWeights } from "@/application/settings/scoring";
 import { DEFAULT_SCORING_WEIGHTS } from "@/domain/scoring/criteria";
 import { TRAVEL_VOICES } from "../fixtures/travel-voices";
-import { testContext } from "../helpers/context";
+import { runQueuedJobs, testContext } from "../helpers/context";
 
 async function seeded() {
   const ctx = testContext();
@@ -74,8 +74,11 @@ describe("opportunity engine", () => {
         { body: "まったく関係のない話題です。天気が良い。", sourceName: "追加インタビュー" },
       ],
     });
-    expect(extra.stats.opportunities).toBe(0);
-    expect(extra.stats.linkedToOpportunity).toBeGreaterThan(0);
+    expect((await ctx.repos.research.getRun(extra.runId))?.status).toBe("QUEUED");
+    await runQueuedJobs(ctx);
+    const extraRun = await ctx.repos.research.getRun(extra.runId);
+    expect(extraRun?.stats.opportunities).toBe(0);
+    expect(extraRun?.stats.linkedToOpportunity).toBeGreaterThan(0);
     const evidenceAfter = await ctx.repos.opportunities.listOpportunityEvidenceIds(opp.id);
     expect(evidenceAfter.length).toBeGreaterThan(evidenceBefore);
     const latest = await ctx.repos.opportunities.latestScore(opp.id);

@@ -1,6 +1,6 @@
 import type { StoredAdvisorSession, StoredDecision, StoredRedTeamReview, StoredReport } from "@/application/ports/repositories";
 import type { Experiment, ExperimentDraft } from "@/domain/analysis/experiment";
-import type { PipelineResult } from "@/application/research/pipeline";
+import type { ResearchDispatch } from "@/application/research/dispatch";
 import type { AdditionalResearchType } from "@/application/opportunity/additional-research";
 import type { Opportunity } from "@/domain/opportunity/opportunity";
 import type { ResearchRequest } from "@/domain/research/directive";
@@ -27,8 +27,9 @@ export type ExecutiveBriefing = {
  * implement the same interface over HTTP later.
  */
 export interface ExecutiveAssistantAdapter {
-  sendDirective(request: ResearchRequest): Promise<PipelineResult>;
-  requestDeepResearch(opportunityId: string, type: AdditionalResearchType, note?: string): Promise<PipelineResult>;
+  /** Creates the run and queues it; returns at once (the worker executes it). */
+  sendDirective(request: ResearchRequest): Promise<ResearchDispatch>;
+  requestDeepResearch(opportunityId: string, type: AdditionalResearchType, note?: string): Promise<ResearchDispatch>;
   consult(opportunityId: string): Promise<ExecutiveBriefing>;
   openAdvisorCouncil(opportunityId: string): Promise<StoredAdvisorSession>;
   runRedTeam(opportunityId: string): Promise<StoredRedTeamReview>;

@@ -34,4 +34,12 @@ All live in `private` (not exposed by PostgREST) except `create_organization` an
 
 ## Demo mode
 
-`MRO_DEMO_MODE=true` disables authentication and stores data in process memory. It is ignored when Supabase is configured, shows a permanent banner, and must not be used with real data.
+`MRO_DEMO_MODE=true` disables authentication and stores data in process memory. It is ignored when Supabase is configured, shows a permanent banner, and must not be used with real data. In a production build it is rejected unless `ENABLE_MOCK_CONNECTORS=true` marks an explicit test deployment (E2E).
+
+## Phase 5 additions
+
+- **Job queue**: `public.jobs` is select-only for members (RLS). Enqueue/cancel/re-queue go through SECURITY DEFINER RPCs that check role and that referenced runs/opportunities belong to the organization (BOLA). `claim_jobs`, `heartbeat_job`, `complete_job`, `fail_job`, `release_job`, `job_queue_stats` are executable by `service_role` only. Every worker write is conditional on owning the lease.
+- **Worker isolation**: the worker uses the service-role key but builds a context per job from the job's organization and owner, re-checks the owner's membership/role before executing, and every repository query filters `organization_id`. Audit rows written by the worker are attributed to the job owner (`metadata.via = "worker"`).
+- **Mock safety**: mock connectors only with `NODE_ENV != production` or `ENABLE_MOCK_CONNECTORS=true`; otherwise the process throws. MOCK data is labelled and a persistent banner is shown; missing credentials never fall back to mocks.
+- **Prompt injection**: see `src/domain/agent/prompt-boundary.ts`; suspicious content is flagged (`metadata.promptInjectionSuspected`) and still analysed only as data.
+- **Unresolved warnings** are listed in `docs/PRODUCTION_READINESS_AUDIT.md` (Supabase advisors not runnable without a hosted project; member update policy on `research_runs`; dev-only `braces` advisory).

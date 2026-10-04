@@ -19,6 +19,7 @@ import type { OpportunityScore } from "@/domain/scoring/score";
 import type { ConfidenceLevel } from "@/domain/shared/confidence";
 import type { MarketSignal, StoredSignal } from "@/domain/signal/signal";
 import type { NewSourceItem, SourceItem } from "@/domain/source/source-item";
+import type { JobQueue } from "@/application/jobs/ports";
 
 /**
  * Persistence ports. Implementations: in-memory (tests, demo) and Supabase
@@ -46,7 +47,15 @@ export interface ResearchRepository {
   transitionRun(
     id: string,
     to: ResearchRunStatus,
-    patch?: { statusReason?: string | null; degraded?: boolean; stats?: ResearchRunStats; costUsd?: number },
+    patch?: {
+      statusReason?: string | null;
+      degraded?: boolean;
+      stats?: ResearchRunStats;
+      costUsd?: number;
+      /** Defaults to RUN_PROGRESS[to] / RUN_ACTION_JA[to] when the status changes. */
+      progressPercent?: number;
+      currentAction?: string | null;
+    },
   ): Promise<ResearchRun>;
 }
 
@@ -54,6 +63,7 @@ export interface EvidenceRepository {
   /** Inserts items; items colliding with existing (run, hash|external id) are skipped. */
   insertSourceItems(items: NewSourceItem[]): Promise<SourceItem[]>;
   listSourceItems(runId: string): Promise<SourceItem[]>;
+  /** Inserts evidence; an identical excerpt of the same source item is skipped (idempotent). */
   insertEvidence(items: NewEvidence[]): Promise<Evidence[]>;
   listEvidence(filter: { runId?: string; ids?: string[] }): Promise<Evidence[]>;
 }
@@ -91,7 +101,15 @@ export type NewCluster = Omit<StoredCluster, "id" | "createdAt"> & {
 };
 
 export interface SignalRepository {
+  /** Each signal is inserted atomically with its evidence links. */
   insertSignals(signals: NewSignal[]): Promise<StoredSignal[]>;
+  /**
+   * Resume support: removes the partial output of an interrupted stage of a
+   * NON-terminal run (signals and their links / clusters and memberships).
+   * Refuses when opportunities already reference the run's clusters.
+   */
+  discardRunSignals(runId: string): Promise<number>;
+  discardRunClusters(runId: string): Promise<number>;
   setEmbeddings(rows: Array<{ id: string; embedding: number[]; model: string }>): Promise<void>;
   listSignals(filter: { runId?: string; ids?: string[]; limit?: number; offset?: number }): Promise<StoredSignal[]>;
   insertClusters(clusters: NewCluster[]): Promise<StoredCluster[]>;
@@ -138,6 +156,7 @@ export type StoredDecision = {
 };
 
 export interface OpportunityRepository {
+  /** Atomic with its evidence links. One opportunity per cluster (CONFLICT otherwise). */
   createOpportunity(input: {
     researchRunId: string;
     clusterId: string;
@@ -396,6 +415,8 @@ export interface ExecutiveRepository {
 }
 
 export type Repositories = {
+  /** Background job queue (enqueue-only for user requests). */
+  jobs: JobQueue;
   research: ResearchRepository;
   evidence: EvidenceRepository;
   signals: SignalRepository;

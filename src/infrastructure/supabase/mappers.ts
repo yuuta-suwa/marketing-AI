@@ -56,6 +56,8 @@ export const mapRun = (r: Row): ResearchRun => ({
   stats: r.stats ?? {},
   budgetLimitUsd: num(r.budget_limit_usd),
   costUsd: num(r.cost_usd),
+  progressPercent: num(r.progress_percent),
+  currentAction: r.current_action ?? null,
   startedAt: r.started_at,
   completedAt: r.completed_at,
   createdBy: r.created_by,

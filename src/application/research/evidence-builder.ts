@@ -47,7 +47,8 @@ export function buildEvidence(
       out.push({ ...base, evidenceText: item.body.slice(0, 4000) });
       continue;
     }
-    const excerpts = splitIntoExcerpts(item.body).filter(hasAnyCue).slice(0, maxPerItem);
+    // Identical sentences in one item are one piece of evidence (DB: unique per source item + text).
+    const excerpts = [...new Set(splitIntoExcerpts(item.body).filter(hasAnyCue))].slice(0, maxPerItem);
     for (const text of excerpts) out.push({ ...base, evidenceText: text });
   }
   return out;

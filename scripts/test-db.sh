@@ -42,6 +42,9 @@ for f in "${ROOT}"/supabase/migrations/*.sql; do
   "${RUN_AS[@]}" "${PSQL[@]}" -f "$f"
 done
 
-echo "› running database tests"
-"${RUN_AS[@]}" "${PSQL[@]}" -f "${ROOT}/supabase/tests/10_rls_and_integrity.sql" 2>&1 \
-  | sed -e 's/^psql:[^ ]* NOTICE:  /  /' | grep -v '^\s*$'
+for f in "${ROOT}"/supabase/tests/[1-9]*.sql; do
+  echo "› running $(basename "$f")"
+  "${RUN_AS[@]}" "${PSQL[@]}" -f "$f" 2>&1 \
+    | sed -e 's/^psql:[^ ]* NOTICE:  /  /' | grep -v '^\s*$'
+done
+echo 'ALL DATABASE TESTS PASSED'

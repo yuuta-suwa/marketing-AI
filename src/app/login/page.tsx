@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { LoginForm } from "@/components/forms/login-form";
 import { Notice } from "@/components/ui";
 import { runtimeMode } from "@/infrastructure/runtime-mode";
+import { validateEnvironment } from "@/infrastructure/env-contract";
 
 export const metadata = { title: "ログイン" };
 
@@ -10,6 +11,8 @@ export default async function LoginPage() {
   await connection();
   const mode = runtimeMode();
   if (mode === "demo") redirect("/dashboard");
+  // Names of misconfigured variables only — never values.
+  const envErrors = mode === "unconfigured" ? validateEnvironment("web").errors : [];
   return (
     <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-6 px-4">
       <div>
@@ -19,7 +22,14 @@ export default async function LoginPage() {
       </div>
       {mode === "unconfigured" ? (
         <Notice tone="warn">
-          Supabaseが未設定です。NEXT_PUBLIC_SUPABASE_URL と NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY を設定してください（ローカル検証は MRO_DEMO_MODE=true）。
+          Supabaseが未設定です。NEXT_PUBLIC_SUPABASE_URL と NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY を設定してください（ローカル検証は MRO_DEMO_MODE=true、本番では無効）。
+          {envErrors.length > 0 ? (
+            <ul className="mt-2 list-disc pl-4 text-xs" data-testid="env-errors">
+              {envErrors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          ) : null}
         </Notice>
       ) : (
         <LoginForm />

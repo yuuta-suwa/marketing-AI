@@ -1,4 +1,5 @@
 import type { ComplianceProfile } from "@/domain/compliance/compliance";
+import { ConnectorError } from "@/domain/connector/connector";
 import { fetchJson, isoOrUndefined, processEnv, type EnvReader, type FetchLike } from "../http";
 import type { SearchProvider, SearchQuery, SearchResult } from "./search-provider";
 
@@ -39,6 +40,17 @@ export class BraveSearchProvider implements SearchProvider {
         : "公式APIだが、結果の保存可否は契約プランに依存。確認後 WEB_SEARCH_STORAGE_RIGHTS_CONFIRMED=true を設定。",
       prohibitions: ["検索結果ページのスクレイピング", "検索結果リンク先の無断クロール"],
     };
+  }
+
+  async ping(signal?: AbortSignal): Promise<{ detail: string }> {
+    const key = this.env_("BRAVE_SEARCH_API_KEY");
+    if (!key) throw new ConnectorError("web_search", "BRAVE_SEARCH_API_KEY not configured", false);
+    const data = await fetchJson<BraveResponse>("web_search", this.fetchImpl, "https://api.search.brave.com/res/v1/web/search?q=travel&count=1", {
+      headers: { Accept: "application/json", "X-Subscription-Token": key },
+      signal,
+      timeoutMs: 10_000,
+    });
+    return { detail: `${data.web?.results?.length ?? 0} result(s)` };
   }
 
   async search(q: SearchQuery): Promise<SearchResult[]> {

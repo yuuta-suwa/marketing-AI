@@ -399,4 +399,3 @@ select tests.expect_count($$select public.set_signal_embeddings((select org_a fr
   'batch embedding update cannot touch another tenant');
 reset role;
 
-\echo 'ALL DATABASE TESTS PASSED'

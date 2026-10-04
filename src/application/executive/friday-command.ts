@@ -3,7 +3,7 @@ import { createExperiment } from "@/application/analysis/experiments";
 import { decideOpportunity } from "@/application/opportunity/decide";
 import { runRedTeam } from "@/application/opportunity/red-team";
 import { createResearch } from "@/application/research/create-research";
-import { runResearchPipeline } from "@/application/research/pipeline";
+import { dispatchResearch } from "@/application/research/dispatch";
 import { startAdditionalResearch } from "@/application/opportunity/additional-research";
 import { parseFridayIntent } from "@/domain/executive/friday-intent";
 import { nextForwardStatus, OPPORTUNITY_STATUS_LABEL_JA } from "@/domain/opportunity/status";
@@ -17,8 +17,6 @@ export type FridayReply = {
   intent: string;
   message: string;
   link?: { href: string; label: string };
-  /** Work to run after the response (e.g. a research pipeline). */
-  background?: () => Promise<unknown>;
 };
 
 const HELP =
@@ -42,20 +40,20 @@ export async function handleFridayCommand(ctx: AppContext, input: { text: string
         return { intent: intent.kind, message: HELP };
       case "RESEARCH": {
         const { run } = await createResearch(ctx, { input: intent.query });
+        await dispatchResearch(ctx, run.id);
         return {
           intent: intent.kind,
-          message: "調査を開始しました。収集 → Evidence → Signal → Opportunity まで自動で進めます。",
+          message: "調査をキューに登録しました。バックグラウンドで収集 → Evidence → Signal → Opportunity まで進めます。",
           link: { href: `/research/runs/${run.id}`, label: "進捗を見る" },
-          background: () => runResearchPipeline(ctx, run.id),
         };
       }
       case "DEEP_RESEARCH": {
         const id = needOpp();
+        const dispatched = await startAdditionalResearch(ctx, { opportunityId: id, type: intent.type });
         return {
           intent: intent.kind,
-          message: `追加調査（${intent.type}）を開始します。結果はこの事業機会に反映されます。`,
-          link: { href: `/opportunities/${id}`, label: "事業機会を見る" },
-          background: () => startAdditionalResearch(ctx, { opportunityId: id, type: intent.type }),
+          message: `追加調査（${intent.type}）をキューに登録しました。結果はこの事業機会に反映されます。`,
+          link: { href: `/research/runs/${dispatched.runId}`, label: "進捗を見る" },
         };
       }
       case "RED_TEAM": {

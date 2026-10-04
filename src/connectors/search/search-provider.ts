@@ -28,4 +28,6 @@ export interface SearchProvider {
   configured(): boolean;
   compliance(): ComplianceProfile;
   search(q: SearchQuery): Promise<SearchResult[]>;
+  /** Minimal live request (1 result) for readiness checks. */
+  ping?(signal?: AbortSignal): Promise<{ detail: string }>;
 }

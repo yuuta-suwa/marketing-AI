@@ -9,6 +9,7 @@ import type { ResearchDirective } from "@/domain/research/directive";
 import { computeOpportunityScore } from "@/domain/scoring/score";
 import type { SignalType, StoredSignal } from "@/domain/signal/signal";
 import type { SourceItem } from "@/domain/source/source-item";
+import { isDomainError } from "@/domain/shared/errors";
 
 export function dominantType(signals: readonly StoredSignal[]): SignalType {
   const counts = new Map<SignalType, number>();
@@ -39,12 +40,43 @@ export async function generateOpportunities(
     evidence: Map<string, Evidence>;
     sourceItems: Map<string, SourceItem>;
     qualityOf: (connectorId: string) => number;
+    /** Opportunities persisted by an earlier (interrupted) attempt of this stage. */
+    existing?: Opportunity[];
   },
-): Promise<{ opportunities: Opportunity[]; budgetStops: string[] }> {
+): Promise<{ opportunities: Opportunity[]; budgetStops: string[]; reused: number }> {
   const { weights, id: scoringSettingsId } = await ctx.repos.ops.getScoringWeights();
   const now = ctx.clock.now().toISOString();
   const opportunities: Opportunity[] = [];
   const budgetStops: string[] = [];
+  const existingByCluster = new Map((input.existing ?? []).map((o) => [o.clusterId, o]));
+  let reused = 0;
+
+  const scoreOf = (cluster: StoredCluster, members: StoredSignal[], citedEvidence: Evidence[]) => {
+    const confidence = assessConfidence(citedEvidence, input.sourceItems, input.qualityOf, now);
+    const score = computeOpportunityScore(
+      deriveScoreInputs(
+        {
+          signalCount: cluster.signalCount,
+          painScore: cluster.painScore,
+          paySignalScore: cluster.paySignalScore,
+          momentum: cluster.momentum,
+          datedObservations: citedEvidence.filter((e) => input.sourceItems.get(e.sourceItemId)?.publishedAt).length,
+        },
+        members,
+      ),
+      weights,
+    );
+    return { confidence, score };
+  };
+  const saveScore = (opportunityId: string, s: ReturnType<typeof scoreOf>) =>
+    ctx.repos.opportunities.saveScore({
+      opportunityId,
+      weights,
+      score: s.score,
+      confidence: s.confidence.level,
+      confidenceBreakdown: s.confidence,
+      scoredBy: scoringSettingsId ? `scoring_settings:${scoringSettingsId}` : "default-weights",
+    });
 
   for (const cluster of rankClusters(input.clusters).slice(0, ctx.options.maxOpportunitiesPerRun)) {
     const members = cluster.signalIds.map((id) => input.signals.get(id)).filter((s): s is StoredSignal => Boolean(s));
@@ -52,6 +84,19 @@ export async function generateOpportunities(
       .map((id) => input.evidence.get(id))
       .filter((e): e is Evidence => Boolean(e));
     if (members.length === 0 || evidence.length === 0) continue;
+
+    // Idempotent resume: never create a second opportunity for a cluster.
+    const prior = existingByCluster.get(cluster.id);
+    if (prior) {
+      reused++;
+      if (!(await ctx.repos.opportunities.latestScore(prior.id))) {
+        // The earlier attempt died between creating the opportunity and scoring it.
+        const linked = new Set(await ctx.repos.opportunities.listOpportunityEvidenceIds(prior.id));
+        await saveScore(prior.id, scoreOf(cluster, members, evidence.filter((e) => linked.has(e.id))));
+      }
+      opportunities.push(prior);
+      continue;
+    }
 
     const clusterCtx: ClusterContext = {
       id: cluster.id,
@@ -101,38 +146,27 @@ export async function generateOpportunities(
     }
 
     const citedEvidence = draft.evidenceIds.map((id) => input.evidence.get(id)).filter((e): e is Evidence => Boolean(e));
-    const confidence = assessConfidence(citedEvidence, input.sourceItems, input.qualityOf, now);
-    const score = computeOpportunityScore(
-      deriveScoreInputs(
-        {
-          signalCount: cluster.signalCount,
-          painScore: cluster.painScore,
-          paySignalScore: cluster.paySignalScore,
-          momentum: cluster.momentum,
-          datedObservations: citedEvidence.filter((e) => input.sourceItems.get(e.sourceItemId)?.publishedAt).length,
-        },
-        members,
-      ),
-      weights,
-    );
-
-    const opportunity = await ctx.repos.opportunities.createOpportunity({
-      researchRunId: input.runId,
-      clusterId: cluster.id,
-      draft,
-      confidence: confidence.level,
-      scoreTotal: score.total,
-      momentum: cluster.momentum,
-    });
-    await ctx.repos.opportunities.saveScore({
-      opportunityId: opportunity.id,
-      weights,
-      score,
-      confidence: confidence.level,
-      confidenceBreakdown: confidence,
-      scoredBy: scoringSettingsId ? `scoring_settings:${scoringSettingsId}` : "default-weights",
-    });
+    const scored = scoreOf(cluster, members, citedEvidence);
+    let opportunity: Opportunity;
+    try {
+      opportunity = await ctx.repos.opportunities.createOpportunity({
+        researchRunId: input.runId,
+        clusterId: cluster.id,
+        draft,
+        confidence: scored.confidence.level,
+        scoreTotal: scored.score.total,
+        momentum: cluster.momentum,
+      });
+    } catch (e) {
+      // Unique (cluster_id): a concurrent/duplicate delivery already created it.
+      if (isDomainError(e) && e.code === "CONFLICT") {
+        ctx.logger.warn("opportunity.duplicate_skipped", { research_run_id: input.runId, cluster_id: cluster.id });
+        continue;
+      }
+      throw e;
+    }
+    await saveScore(opportunity.id, scored);
     opportunities.push(opportunity);
   }
-  return { opportunities, budgetStops };
+  return { opportunities, budgetStops, reused };
 }

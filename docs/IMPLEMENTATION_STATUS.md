@@ -50,7 +50,7 @@ The repository was empty (no commits, no files). Everything below was built from
 
 ## Known limitations
 
-- Pipeline runs in-process via `after()`; long runs depend on platform max duration (queue worker in M3).
+- ~~Pipeline runs in-process via `after()`~~ — resolved in Phase 5 (Postgres job queue + worker). Current verified status: [PRODUCTION_READINESS_AUDIT.md](PRODUCTION_READINESS_AUDIT.md) / [PRODUCTION_READINESS_REPORT.md](PRODUCTION_READINESS_REPORT.md).
 - Default local hash embeddings are lexical; set `EMBEDDING_PROVIDER=openai` for semantic clustering.
 - Market size and CFO numbers come only from user/evidence inputs or labelled default assumptions — they are only as good as those inputs.
 - OpenAI / Gemini adapters not implemented (port ready).

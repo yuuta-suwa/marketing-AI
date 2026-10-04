@@ -85,6 +85,7 @@ export async function buildClusters(
     const sources = s.evidenceIds.map(sourceOf).filter((x): x is SourceItem => Boolean(x));
     return {
       id: s.id,
+      orderKey: signalText(s),
       signalType: s.signalType,
       category: s.category,
       embedding: input.vectors.get(s.id) ?? [],

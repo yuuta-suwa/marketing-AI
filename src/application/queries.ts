@@ -3,6 +3,7 @@ import { COMPLIANCE_STATUSES, evaluateConnectorGate, effectiveComplianceStatus }
 import { can } from "@/domain/auth/authorization";
 import { authorize } from "@/domain/auth/authorization";
 import { DomainError } from "@/domain/shared/errors";
+import { connectorReadiness } from "@/application/connectors/readiness";
 
 /** Read models for the UI. Pages call these; they never query storage directly. */
 
@@ -34,7 +35,7 @@ export async function getRunDetail(ctx: AppContext, runId: string) {
   authorize(ctx.actor, "research.read");
   const run = await ctx.repos.research.getRun(runId);
   if (!run) throw new DomainError("NOT_FOUND", "Research run not found");
-  const [directive, connectorRuns, clusters, opportunities, agentRuns, evidence, sourceItems, signals] = await Promise.all([
+  const [directive, connectorRuns, clusters, opportunities, agentRuns, evidence, sourceItems, signals, jobs] = await Promise.all([
     ctx.repos.research.getDirective(run.directiveId),
     ctx.repos.ops.listConnectorRuns(runId),
     ctx.repos.signals.listClusters({ runId }),
@@ -43,7 +44,10 @@ export async function getRunDetail(ctx: AppContext, runId: string) {
     ctx.repos.evidence.listEvidence({ runId }),
     ctx.repos.evidence.listSourceItems(runId),
     ctx.repos.signals.listSignals({ runId, limit: 200 }),
+    ctx.repos.jobs.list({ researchRunId: runId, limit: 20 }),
   ]);
+  const queued = jobs.filter((j) => j.status === "QUEUED" || j.status === "RETRYING");
+  const oldestQueued = queued.length ? Math.min(...queued.map((j) => Date.parse(j.availableAt))) : null;
   const errors = [
     ...connectorRuns.filter((c) => c.status === "FAILED" || c.status === "PARTIAL").map((c) => `${c.connectorKey}: ${c.error ?? c.status}`),
     ...agentRuns.filter((a) => a.status === "FAILED" || a.status === "SKIPPED_BUDGET").map((a) => `${a.agentName}: ${a.error ?? a.status}`),
@@ -62,6 +66,9 @@ export async function getRunDetail(ctx: AppContext, runId: string) {
     signals,
     estimatedCostUsd: run.costUsd,
     errors,
+    jobs: [...jobs].reverse(),
+    /** Seconds the oldest ready job has waited for a worker (null = none waiting). */
+    queueWaitSeconds: oldestQueued === null ? null : Math.max(0, (ctx.clock.now().getTime() - oldestQueued) / 1000),
   };
 }
 
@@ -113,6 +120,11 @@ export async function getOpportunityDetail(ctx: AppContext, opportunityId: strin
 export async function listConnectorStatus(ctx: AppContext) {
   authorize(ctx.actor, "research.read");
   const settings = new Map((await ctx.repos.ops.getConnectorSettings()).map((s) => [s.connectorKey, s]));
+  const recent = await ctx.repos.ops.listRecentConnectorRuns(1000);
+  const now = ctx.clock.now();
+  const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  // Only names are inspected (never values); the page never shows secrets.
+  const env = (name: string) => process.env[name];
   return Promise.all(
     ctx.connectors.list().map(async (c) => {
       const profile = c.complianceStatus();
@@ -125,11 +137,19 @@ export async function listConnectorStatus(ctx: AppContext) {
         credentialsPresent: c.credentialsPresent(),
         credentialsRequired: c.credentialsRequired,
       });
+      const runs = recent.filter((r) => r.connectorKey === c.id);
+      const today = runs.filter((r) => Date.parse(r.startedAt) >= dayStart && r.status !== "SKIPPED");
+      const lastSuccess = runs.find((r) => r.status === "SUCCESS" || r.status === "PARTIAL");
+      const lastError = runs.find((r) => r.status === "FAILED" || (r.status === "PARTIAL" && r.error));
+      const readiness = await connectorReadiness(c, { env, setting, live: false });
       return {
         id: c.id,
         name: c.name,
         category: c.category,
         description: c.description,
+        mode: readiness.mode,
+        readiness: readiness.readiness,
+        missingEnv: readiness.missingEnv,
         compliance: effectiveComplianceStatus(profile.status, setting?.complianceStatus),
         profile,
         enabled,
@@ -139,6 +159,11 @@ export async function listConnectorStatus(ctx: AppContext) {
         health: await c.healthCheck(),
         runnable: gate.allowed,
         blockedReason: gate.allowed ? null : gate.message,
+        lastSuccessAt: lastSuccess?.completedAt ?? null,
+        lastError: lastError ? { at: lastError.completedAt, message: lastError.error ?? lastError.status } : null,
+        /** External requests today (each attempt incl. retries). */
+        requestsToday: today.reduce((n, r) => n + 1 + r.retryCount, 0),
+        costTodayUsd: today.reduce((n, r) => n + (r.costUsd ?? 0), 0),
         termsNotes: setting?.termsNotes ?? null,
         /** Statuses an admin may choose: equal to or stricter than the code profile. */
         allowedStatuses: COMPLIANCE_STATUSES.filter((st) => effectiveComplianceStatus(profile.status, st) === st),
@@ -165,11 +190,13 @@ export async function getCostSummary(ctx: AppContext) {
 
 export async function getObservability(ctx: AppContext) {
   authorize(ctx.actor, "research.read");
-  const [connectorRuns, agentRuns] = await Promise.all([
+  const [connectorRuns, agentRuns, jobs, deadLetters] = await Promise.all([
     ctx.repos.ops.listRecentConnectorRuns(50),
     ctx.repos.ops.listAgentRuns({ limit: 50 }),
+    ctx.repos.jobs.list({ limit: 30 }),
+    ctx.repos.jobs.list({ deadLetteredOnly: true, limit: 30 }),
   ]);
-  return { connectorRuns, agentRuns };
+  return { connectorRuns, agentRuns, jobs, deadLetters, canManageJobs: can(ctx.actor, "job.manage") };
 }
 
 export async function getFridayCenter(ctx: AppContext, opportunityId?: string) {

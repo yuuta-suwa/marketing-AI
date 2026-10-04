@@ -1,6 +1,7 @@
 import type { AIProvider } from "@/domain/agent/ai-provider";
 import { parseDirectiveByRules } from "@/domain/research/directive-parser";
 import { ResearchDirectiveSchema, type ResearchDirective, type ResearchRequest } from "@/domain/research/directive";
+import { buildAgentPrompt, composeSystem } from "@/domain/agent/prompt-boundary";
 
 export const MARKET_DIRECTOR = "MarketDirectorAgent";
 
@@ -27,8 +28,11 @@ export async function parseDirective(
   try {
     const res = await provider.generate({
       agent: MARKET_DIRECTOR,
-      system: SYSTEM,
-      prompt: `Request:\n${request.input}\n\nReturn fields: objective, countries, languages, personas, categories, keywords, negativeKeywords, timeRange.`,
+      system: composeSystem(SYSTEM),
+      prompt: buildAgentPrompt({
+        task: "Convert the user directive into a research directive. Return fields: objective, countries, languages, personas, categories, keywords, negativeKeywords, timeRange.",
+        directive: request.input,
+      }),
       schema: ResearchDirectiveSchema.partial(),
       maxOutputTokens: 800,
     });

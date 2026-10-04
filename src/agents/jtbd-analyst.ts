@@ -5,6 +5,7 @@ import { OpportunityDraftSchema, type OpportunityDraft } from "@/domain/opportun
 import type { ResearchDirective } from "@/domain/research/directive";
 import type { EpistemicStatus } from "@/domain/shared/epistemic";
 import { SIGNAL_TYPE_LABEL_JA, type SignalType, type StoredSignal } from "@/domain/signal/signal";
+import { buildAgentPrompt, composeSystem } from "@/domain/agent/prompt-boundary";
 
 export const JTBD_ANALYST = "JTBDAnalystAgent";
 
@@ -123,12 +124,15 @@ export async function draftOpportunityWithLLM(
   const known = new Set(evidence.map((e) => e.id));
   const res = await provider.generate({
     agent: JTBD_ANALYST,
-    system: SYSTEM,
-    prompt: JSON.stringify({
-      objective: directive.objective,
-      cluster: { name: cluster.name, signalCount: cluster.signalCount, sourceCount: cluster.sourceCount },
-      signals: signals.map((s) => ({ type: s.signalType, problem: s.problem, evidenceIds: s.evidenceIds })),
-      evidence: evidence.map((e) => ({ id: e.id, text: e.evidenceText })),
+    system: composeSystem(SYSTEM),
+    prompt: buildAgentPrompt({
+      task: "Draft one business opportunity hypothesis for this cluster.",
+      directive: { objective: directive.objective },
+      externalData: {
+        cluster: { name: cluster.name, signalCount: cluster.signalCount, sourceCount: cluster.sourceCount },
+        signals: signals.map((s) => ({ type: s.signalType, problem: s.problem, evidenceIds: s.evidenceIds })),
+        evidence: evidence.map((e) => ({ id: e.id, text: e.evidenceText })),
+      },
     }),
     schema: OpportunityDraftSchema.extend({ evidenceIds: z.array(z.string()).min(1) }),
     maxOutputTokens: 2500,

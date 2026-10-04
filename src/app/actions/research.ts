@@ -1,16 +1,16 @@
 "use server";
 
-import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { enforceRateLimit } from "@/application/rate-limit";
 import { createResearch, toManualItems } from "@/application/research/create-research";
 import { csvToManualItems } from "@/application/research/csv-import";
 import { parseManualInput } from "@/application/research/manual-input";
-import { runResearchPipeline } from "@/application/research/pipeline";
+import { dispatchResearch } from "@/application/research/dispatch";
 import { ResearchRequestSchema } from "@/domain/research/directive";
 import { DomainError } from "@/domain/shared/errors";
 import { buildAppContext, requireSession } from "@/infrastructure/server-context";
+import { kickEmbeddedWorker } from "@/infrastructure/worker/embedded";
 import { toActionError, type ActionState } from "./result";
 
 const MAX_CSV_BYTES = 1_000_000;
@@ -34,8 +34,9 @@ async function readManualInputs(formData: FormData) {
 }
 
 /**
- * Creates the directive + run, then executes the pipeline after the
- * response so the phone gets the run page immediately (it polls status).
+ * Creates the directive + run and ENQUEUES the work, then redirects to the
+ * run page at once. The request never executes the research itself: the
+ * background worker does (progress arrives via Realtime / polling).
  */
 export async function startResearchAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let runId: string;
@@ -61,11 +62,8 @@ export async function startResearchAction(_prev: ActionState, formData: FormData
     });
     const { run } = await createResearch(ctx, request);
     runId = run.id;
-    const manualItems = toManualItems(request.manualItems);
-    const manualUrls = request.manualUrls;
-    after(async () => {
-      await runResearchPipeline(ctx, run.id, { manualItems, manualUrls });
-    });
+    await dispatchResearch(ctx, run.id, { manualItems: toManualItems(request.manualItems), manualUrls: request.manualUrls });
+    kickEmbeddedWorker(); // development only; production relies on the external worker
   } catch (e) {
     return toActionError(e);
   }

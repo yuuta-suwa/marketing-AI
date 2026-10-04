@@ -51,12 +51,19 @@ export function checkBudget(limits: BudgetLimits, spent: SpendSnapshot, estimate
 
 /** Mutable tracker used inside one pipeline execution. */
 export class BudgetTracker {
-  private runSpent = 0;
+  private runSpent: number;
 
+  /**
+   * @param alreadySpentThisRun spend of earlier stages of the same run (already
+   *   included in the daily/monthly baseline, so it only counts toward the run limit).
+   */
   constructor(
     private readonly limits: BudgetLimits,
     private readonly baseline: { dailyUsd: number; monthlyUsd: number },
-  ) {}
+    private readonly alreadySpentThisRun = 0,
+  ) {
+    this.runSpent = Math.max(0, alreadySpentThisRun);
+  }
 
   get spentThisRun(): number {
     return this.runSpent;
@@ -67,8 +74,8 @@ export class BudgetTracker {
       this.limits,
       {
         runUsd: this.runSpent,
-        dailyUsd: this.baseline.dailyUsd + this.runSpent,
-        monthlyUsd: this.baseline.monthlyUsd + this.runSpent,
+        dailyUsd: this.baseline.dailyUsd + this.runSpent - this.alreadySpentThisRun,
+        monthlyUsd: this.baseline.monthlyUsd + this.runSpent - this.alreadySpentThisRun,
       },
       estimateUsd,
     );

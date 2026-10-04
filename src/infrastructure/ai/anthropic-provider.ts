@@ -43,6 +43,15 @@ export class AnthropicProvider implements AIProvider {
     return (inputTokens * p.input + maxOutputTokens * p.output) / 1_000_000;
   }
 
+  /**
+   * Credential + connectivity check that generates nothing: the token
+   * counting endpoint is free, so readiness checks cost $0.
+   */
+  async ping(): Promise<{ detail: string }> {
+    const r = await this.client.messages.countTokens({ model: this.model, messages: [{ role: "user", content: "ping" }] });
+    return { detail: `count_tokens ok (${r.input_tokens} tokens, model ${this.model})` };
+  }
+
   async generate<T>(req: GenerateRequest<T>): Promise<GenerateResult<T>> {
     const jsonSchema = JSON.stringify(z.toJSONSchema(req.schema, { io: "input", unrepresentable: "any" }));
     const response = await this.client.beta.messages.create({

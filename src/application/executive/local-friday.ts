@@ -3,7 +3,7 @@ import { startAdditionalResearch } from "@/application/opportunity/additional-re
 import { decideOpportunity } from "@/application/opportunity/decide";
 import { runRedTeam } from "@/application/opportunity/red-team";
 import { createResearch, toManualItems } from "@/application/research/create-research";
-import { runResearchPipeline } from "@/application/research/pipeline";
+import { dispatchResearch } from "@/application/research/dispatch";
 import { authorize } from "@/domain/auth/authorization";
 import { allowedNextStatuses } from "@/domain/opportunity/status";
 import { interpretScoreAndConfidence } from "@/domain/scoring/confidence";
@@ -26,7 +26,7 @@ export class LocalFridayAdapter implements ExecutiveAssistantAdapter {
   async sendDirective(request: Parameters<ExecutiveAssistantAdapter["sendDirective"]>[0]) {
     const { run } = await createResearch(this.ctx, request);
     await this.audit("send_directive", undefined, { runId: run.id });
-    return runResearchPipeline(this.ctx, run.id, { manualItems: toManualItems(request.manualItems) });
+    return dispatchResearch(this.ctx, run.id, { manualItems: toManualItems(request.manualItems) });
   }
 
   async requestDeepResearch(opportunityId: string, type: Parameters<ExecutiveAssistantAdapter["requestDeepResearch"]>[1], note?: string) {

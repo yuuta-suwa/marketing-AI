@@ -67,6 +67,14 @@ export interface MarketConnector {
   complianceStatus(): ComplianceProfile;
   credentialsPresent(): boolean;
   estimateCost?(directive: ResearchDirective): Promise<CostEstimate>;
+  /**
+   * One minimal LIVE request proving credentials + connectivity (cheapest
+   * endpoint, smallest page). Throws ConnectorError on failure. Never called
+   * for connectors that are not compliance-approved.
+   */
+  smokeTest?(signal?: AbortSignal): Promise<{ detail: string; costUsd: number }>;
+  /** True when the adapter runs against canned responses (MOCK mode). */
+  readonly synthetic?: boolean;
 }
 
 export class ConnectorError extends Error {
@@ -79,4 +87,30 @@ export class ConnectorError extends Error {
     super(message);
     this.name = "ConnectorError";
   }
+}
+
+/** Stable error classes for connector failures (logs, connector_runs, UI). */
+export type ConnectorErrorClass =
+  | "AUTH"
+  | "RATE_LIMITED"
+  | "TIMEOUT"
+  | "UPSTREAM_5XX"
+  | "NETWORK"
+  | "BAD_REQUEST"
+  | "INVALID_RESPONSE"
+  | "NOT_CONFIGURED"
+  | "UNKNOWN";
+
+export function classifyConnectorError(e: unknown): { class: ConnectorErrorClass; retryable: boolean } {
+  const message = e instanceof Error ? e.message : String(e);
+  const status = e instanceof ConnectorError ? e.status : undefined;
+  if (status === 401 || status === 403) return { class: "AUTH", retryable: false };
+  if (status === 429) return { class: "RATE_LIMITED", retryable: true };
+  if (status !== undefined && status >= 500) return { class: "UPSTREAM_5XX", retryable: true };
+  if (status !== undefined && status >= 400) return { class: "BAD_REQUEST", retryable: false };
+  if (/timed out|timeout|abort/i.test(message)) return { class: "TIMEOUT", retryable: true };
+  if (/network error|fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|socket/i.test(message)) return { class: "NETWORK", retryable: true };
+  if (/not configured|未設定|missing credential/i.test(message)) return { class: "NOT_CONFIGURED", retryable: false };
+  if (/json|unexpected token|invalid response|e-stat error/i.test(message)) return { class: "INVALID_RESPONSE", retryable: false };
+  return { class: "UNKNOWN", retryable: e instanceof ConnectorError ? e.retryable : true };
 }

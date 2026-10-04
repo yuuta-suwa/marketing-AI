@@ -3,6 +3,7 @@ import { validateEvidenceRefs, type Evidence } from "@/domain/evidence/evidence"
 import type { ResearchDirective } from "@/domain/research/directive";
 import { SignalExtractionOutputSchema, SIGNAL_TYPES, type MarketSignal } from "@/domain/signal/signal";
 import { HEURISTIC_EXTRACTOR_ID, extractSignalsHeuristically } from "./heuristics/signal-heuristics";
+import { buildAgentPrompt, composeSystem } from "@/domain/agent/prompt-boundary";
 
 export const PAIN_MINER = "PainMinerAgent";
 
@@ -55,8 +56,12 @@ export async function llmExtraction(
   const list = evidence.map((e) => ({ id: e.id, text: e.evidenceText, country: e.country, language: e.language }));
   const res = await provider.generate({
     agent: PAIN_MINER,
-    system: SYSTEM,
-    prompt: `Research objective: ${directive.objective}\nPersonas of interest: ${directive.personas.join(", ") || "unspecified"}\n\nEvidence:\n${JSON.stringify(list)}`,
+    system: composeSystem(SYSTEM),
+    prompt: buildAgentPrompt({
+      task: "Extract market signals from the evidence excerpts in <external_market_data>.",
+      directive: { objective: directive.objective, personas: directive.personas },
+      externalData: { evidence: list },
+    }),
     schema: SignalExtractionOutputSchema,
     maxOutputTokens: 4000,
   });

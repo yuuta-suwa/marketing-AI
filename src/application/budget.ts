@@ -13,8 +13,15 @@ function startOfUtcMonth(d: Date): Date {
  * Budget tracker for one unit of work, seeded with the organization's
  * limits and today's / this month's recorded spend (cost_ledger).
  */
-export async function createBudgetTracker(ctx: AppContext, runLimitUsd?: number): Promise<BudgetTracker> {
-  const limits = await ctx.repos.ops.getBudget();
+export async function createBudgetTracker(ctx: AppContext, runLimitUsd?: number, alreadySpentThisRun = 0): Promise<BudgetTracker> {
+  const org = await ctx.repos.ops.getBudget();
+  // Operator hard limits (env) cap the organization's own budgets.
+  const hard = ctx.options.limits;
+  const limits = {
+    perRunUsd: Math.min(org.perRunUsd, hard.maxCostPerResearchRunUsd),
+    dailyUsd: Math.min(org.dailyUsd, hard.maxDailyAiCostUsd),
+    monthlyUsd: Math.min(org.monthlyUsd, hard.maxMonthlyAiCostUsd),
+  };
   const now = ctx.clock.now();
   const [dailyUsd, monthlyUsd] = await Promise.all([
     ctx.repos.ops.spendSince(startOfUtcDay(now)),
@@ -23,5 +30,6 @@ export async function createBudgetTracker(ctx: AppContext, runLimitUsd?: number)
   return new BudgetTracker(
     { ...limits, perRunUsd: runLimitUsd === undefined ? limits.perRunUsd : Math.min(limits.perRunUsd, runLimitUsd) },
     { dailyUsd, monthlyUsd },
+    alreadySpentThisRun,
   );
 }

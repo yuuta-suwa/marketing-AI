@@ -2,38 +2,38 @@ import Link from "next/link";
 import { getRunDetail } from "@/application/queries";
 import { ConfidenceBadge, RunStatusPill, Tag } from "@/components/badges";
 import { OpportunityCard } from "@/components/opportunity-card";
-import { RunPoller } from "@/components/run-poller";
+import { RunProgress } from "@/components/run-progress";
 import { Card, EmptyState, Notice, PageHeader, SectionTitle } from "@/components/ui";
 import { RUN_TYPE_LABEL_JA } from "@/domain/research/run";
 import { SIGNAL_TYPE_LABEL_JA } from "@/domain/signal/signal";
-import { RESEARCH_RUN_STATUSES, isTerminalRunStatus } from "@/domain/research/run-state-machine";
+import { isTerminalRunStatus } from "@/domain/research/run-state-machine";
+import { JOB_STATUS_LABEL_JA, JOB_TYPE_LABEL_JA } from "@/domain/jobs/job";
+import { runtimeMode } from "@/infrastructure/runtime-mode";
 import { orNotFound, pageContext } from "@/lib/page-context";
 
 export const metadata = { title: "調査結果" };
-
-const PIPELINE = RESEARCH_RUN_STATUSES.slice(1, 8);
 
 export default async function RunDetailPage({ params }: PageProps<"/research/runs/[id]">) {
   const { id } = await params;
   const ctx = await pageContext();
   const d = await orNotFound(getRunDetail(ctx, id));
   const active = !isTerminalRunStatus(d.run.status);
-  const stepIndex = PIPELINE.indexOf(d.run.status as (typeof PIPELINE)[number]);
+  const waitingForWorker = d.queueWaitSeconds !== null && d.queueWaitSeconds > 60;
 
   return (
     <>
-      <RunPoller active={active} />
       <PageHeader
         title={RUN_TYPE_LABEL_JA[d.run.runType]}
         subtitle={d.directive?.rawInput}
         action={<RunStatusPill status={d.run.status} />}
       />
-      {active ? (
-        <ol className="mb-4 grid grid-cols-7 gap-1" aria-label="進行状況">
-          {PIPELINE.map((s, i) => (
-            <li key={s} className={`h-1.5 rounded-full ${i <= stepIndex ? "bg-accent" : "bg-line"}`} title={s} />
-          ))}
-        </ol>
+      <RunProgress
+        runId={d.run.id}
+        realtime={runtimeMode() === "supabase"}
+        initial={{ status: d.run.status, progressPercent: d.run.progressPercent, currentAction: d.run.currentAction }}
+      />
+      {active && waitingForWorker ? (
+        <Notice tone="warn">ジョブが{Math.round(d.queueWaitSeconds! / 60)}分以上待機しています。バックグラウンドワーカー（npm run worker）が稼働しているか確認してください。</Notice>
       ) : null}
       <p className="mb-3 text-sm"><span className="text-muted">Objective: </span>{d.directive?.objective ?? "—"}</p>
       {d.run.statusReason ? <Notice tone={d.run.status === "FAILED" ? "error" : "warn"}>{d.run.statusReason}</Notice> : null}
@@ -78,6 +78,34 @@ export default async function RunDetailPage({ params }: PageProps<"/research/run
             </div>
             <p className="mt-2 text-xs text-muted">Keywords: {d.directive.keywords.join(", ") || "—"} · 解析: {d.directive.parser}</p>
           </Card>
+        </>
+      ) : null}
+
+      {d.jobs.length > 0 ? (
+        <>
+          <SectionTitle>Background Jobs</SectionTitle>
+          <ul className="space-y-1.5" data-testid="run-jobs">
+            {d.jobs.map((j) => (
+              <li key={j.id} className="rounded-xl border border-line bg-surface px-3 py-2 text-xs" data-job-status={j.status}>
+                <div className="flex items-center justify-between gap-2">
+                  <span>{JOB_TYPE_LABEL_JA[j.jobType]}</span>
+                  <span className={j.status === "FAILED" ? "text-red-600" : j.status === "COMPLETED" ? "text-emerald-600" : "text-muted"}>
+                    {JOB_STATUS_LABEL_JA[j.status]} · 試行 {j.attemptCount}/{j.maxAttempts}
+                  </span>
+                </div>
+                {j.lastError ? <p className="mt-1 text-muted [overflow-wrap:anywhere]">{j.lastError}</p> : null}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+
+      {d.run.stats.limitStops?.length ? (
+        <>
+          <SectionTitle>省略した処理（上限）</SectionTitle>
+          <ul className="list-disc space-y-1 pl-5 text-xs" data-testid="limit-stops">
+            {d.run.stats.limitStops.map((r) => <li key={r}>{r}</li>)}
+          </ul>
         </>
       ) : null}
 

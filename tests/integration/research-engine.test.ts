@@ -17,7 +17,8 @@ describe("research engine with mock connectors", () => {
     const connectorRuns = await ctx.repos.ops.listConnectorRuns(run.id);
     const byKey = Object.fromEntries(connectorRuns.map((c) => [c.connectorKey, c.status]));
     expect(byKey).toMatchObject({ web_search: "SUCCESS", estat: "SUCCESS", x: "SUCCESS", google_places: "SKIPPED", tripadvisor: "SKIPPED" });
-    expect(connectorRuns.find((c) => c.connectorKey === "web_search")?.costUsd).toBeGreaterThan(0);
+    // MOCK requests touch no paid API, so they never record spend (live cost logging: phase5 tests).
+    expect(connectorRuns.find((c) => c.connectorKey === "web_search")?.costUsd).toBe(0);
 
     const items = await ctx.repos.evidence.listSourceItems(run.id);
     expect(items.length).toBeGreaterThanOrEqual(10);
@@ -32,7 +33,7 @@ describe("research engine with mock connectors", () => {
     const signals = await ctx.repos.signals.listSignals({ runId: run.id });
     expect(signals.length).toBeGreaterThan(5);
     expect(signals.every((s) => s.fieldProvenance?.problem === "FACT")).toBe(true);
-    expect(await ctx.repos.ops.spendByRun(run.id)).toBeGreaterThan(0);
+    expect(await ctx.repos.ops.spendByRun(run.id)).toBe(0);
   });
 
   it("X FAILED / Web SUCCESS / e-Stat SUCCESS → PARTIAL_SUCCESS with results", async () => {

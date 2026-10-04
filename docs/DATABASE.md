@@ -87,3 +87,10 @@ Additional tables:
 | `public.record_audit_event(...)` | definer, member check, actor forced to `auth.uid()` | append-only audit |
 | `public.org_spend_usd(org, since)` | invoker (RLS applies) | budget enforcement |
 | `private.handle_new_user()` | trigger on `auth.users` | profile + personal workspace |
+
+## Phase 5: job queue and idempotency (`20261004000100_job_queue.sql`)
+
+- `jobs` — job_type (10 types), payload, status (`QUEUED/PROCESSING/COMPLETED/FAILED/RETRYING/CANCELLED`), priority, attempt_count, max_attempts, available_at, started/completed/failed_at, last_error, `idempotency_key` (unique per org), lease (`locked_by`, `lease_expires_at`, `heartbeat_at`), `cancel_requested`, `dead_lettered`, result. Transition trigger mirrors `src/domain/jobs/job.ts`.
+- RPCs: `enqueue_job`, `cancel_job`, `requeue_dead_letter` (users, security definer); `claim_jobs`, `heartbeat_job`, `complete_job`, `fail_job`, `release_job`, `job_queue_stats` (service_role only).
+- `research_runs.progress_percent`, `current_action`; `research_runs` and `jobs` added to `supabase_realtime`.
+- Idempotency: `evidence.text_hash` + unique `(source_item_id, text_hash)`; unique `opportunities(cluster_id)`; `create_opportunity_with_evidence` and `insert_signals_with_evidence` write rows and their evidence links in one transaction.

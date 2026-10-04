@@ -1,6 +1,7 @@
 import type { BudgetTracker } from "@/domain/cost/budget";
 import type { TokenUsage } from "@/domain/agent/ai-provider";
 import type { Logger } from "@/lib/logger";
+import type { RunCounter } from "./limits";
 import type { OpsRepository } from "./ports/repositories";
 
 export type AgentExecution<T> = {
@@ -47,8 +48,13 @@ export class AgentRunner {
       budget: BudgetTracker;
       logger: Logger;
       maxCallsPerAgent: number;
+      /** Run-wide cap on paid model calls (MAX_LLM_CALLS_PER_RUN). Heuristic agents are free and exempt. */
+      llmCalls?: RunCounter;
     },
   ) {}
+
+  /** Hard-limit stops that happened in this runner (for the run's explanation). */
+  readonly limitStops: string[] = [];
 
   private async auditRun(call: AgentCall<unknown>, agentRunId: string, status: string, costUsd = 0): Promise<void> {
     try {
@@ -71,6 +77,12 @@ export class AgentRunner {
     if (used >= this.deps.maxCallsPerAgent) {
       const reason = `${call.agentName}: call limit ${this.deps.maxCallsPerAgent} reached`;
       this.deps.logger.warn("agent.limit", { agent: call.agentName, status: "SKIPPED_LIMIT" });
+      return { status: "SKIPPED_LIMIT", reason };
+    }
+    if (call.provider !== "heuristic" && this.deps.llmCalls && !this.deps.llmCalls.tryTake()) {
+      const reason = this.deps.llmCalls.stopReason;
+      if (!this.limitStops.includes(reason)) this.limitStops.push(reason);
+      this.deps.logger.warn("agent.run_limit", { agent: call.agentName, status: "SKIPPED_LIMIT" });
       return { status: "SKIPPED_LIMIT", reason };
     }
     this.calls.set(call.agentName, used + 1);

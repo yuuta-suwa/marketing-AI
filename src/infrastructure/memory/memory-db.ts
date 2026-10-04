@@ -17,6 +17,7 @@ import type {
   StoredScore,
 } from "@/application/ports/repositories";
 import type { Experiment } from "@/domain/analysis/experiment";
+import type { Job } from "@/domain/jobs/job";
 import type { CostEntry } from "@/domain/cost/cost";
 import type { Evidence } from "@/domain/evidence/evidence";
 import type { Opportunity } from "@/domain/opportunity/opportunity";
@@ -63,4 +64,7 @@ export class MemoryDatabase {
   notifications = new Map<string, Scoped<StoredNotification> & { dedupeKey?: string }>();
   rateLimits = new Map<string, number[]>();
   feedback = new Map<string, Scoped<StoredFeedback>>();
+  jobs = new Map<string, Job>();
+  /** Membership directory for system contexts (worker re-checks access). */
+  members = new Map<string, Map<string, "viewer" | "member" | "admin" | "owner">>();
 }

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { AIProvider, GenerateResult } from "@/domain/agent/ai-provider";
 import { validateEvidenceRefs, type Evidence } from "@/domain/evidence/evidence";
 import type { StoredSignal } from "@/domain/signal/signal";
+import { buildAgentPrompt, composeSystem } from "@/domain/agent/prompt-boundary";
 
 export const COMPETITOR_ANALYST = "CompetitorAnalystAgent";
 
@@ -100,8 +101,12 @@ export async function analyzeCompetitorsWithLLM(
 ): Promise<{ findings: CompetitorFinding[]; llm: Omit<GenerateResult<unknown>, "output"> }> {
   const res = await provider.generate({
     agent: COMPETITOR_ANALYST,
-    system: SYSTEM,
-    prompt: JSON.stringify({ opportunity, evidence: evidence.map((e) => ({ id: e.id, text: e.evidenceText })) }),
+    system: composeSystem(SYSTEM),
+    prompt: buildAgentPrompt({
+      task: "List competitors and alternatives mentioned in the evidence.",
+      directive: { opportunity },
+      externalData: { evidence: evidence.map((e) => ({ id: e.id, text: e.evidenceText })) },
+    }),
     schema: OutputSchema,
     maxOutputTokens: 3000,
   });

@@ -1,10 +1,11 @@
 import type { ConnectorRunRecord, ConnectorSetting } from "@/application/ports/repositories";
 import type { AppContext } from "@/application/context";
 import { evaluateConnectorGate } from "@/domain/compliance/compliance";
-import { ConnectorError, type MarketConnector } from "@/domain/connector/connector";
+import { classifyConnectorError, type MarketConnector } from "@/domain/connector/connector";
 import type { BudgetTracker } from "@/domain/cost/budget";
 import type { ResearchDirective } from "@/domain/research/directive";
 import { RawSourceItemSchema, type RawSourceItem } from "@/domain/source/source-item";
+import type { RunCounter } from "@/application/limits";
 
 export type ConnectorOutcome = {
   connector: MarketConnector;
@@ -13,6 +14,8 @@ export type ConnectorOutcome = {
   error?: string;
   retryCount: number;
   costUsd?: number;
+  /** Set when a hard limit (not a failure) prevented the request. */
+  limitStop?: string;
 };
 
 /** Which connectors a run should consider. */
@@ -29,6 +32,8 @@ export function selectConnectors(
     return c.complianceStatus().status !== "DISABLED_PENDING_COMPLIANCE";
   });
 }
+
+const sleep = (ms: number) => (ms > 0 ? new Promise<void>((r) => setTimeout(r, ms)) : Promise.resolve());
 
 async function withTimeout<T>(p: Promise<T>, ms: number, controller: AbortController): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -59,6 +64,8 @@ export async function collectSources(
     manualUrls?: string[];
     settings: ConnectorSetting[];
     budget: BudgetTracker;
+    /** MAX_SEARCH_REQUESTS_PER_RUN: every external request attempt (retries included) takes one. */
+    externalRequests?: RunCounter;
   },
 ): Promise<ConnectorOutcome[]> {
   const settings = new Map(input.settings.map((s) => [s.connectorKey, s]));
@@ -128,6 +135,11 @@ export async function collectSources(
       let retryCount = 0;
       const warnings: string[] = [];
       for (;;) {
+        // Manual input (pasted text / CSV / user URLs) is not an external search request.
+        if (connector.id !== "manual_import" && input.externalRequests && !input.externalRequests.tryTake()) {
+          const reason = input.externalRequests.stopReason;
+          return finish({ connector, status: retryCount > 0 ? "FAILED" : "SKIPPED", items: [], error: reason, retryCount, limitStop: reason });
+        }
         const controller = new AbortController();
         try {
           const raw = await withTimeout(
@@ -171,16 +183,19 @@ export async function collectSources(
             costUsd: estimate,
           });
         } catch (e) {
-          const retryable = e instanceof ConnectorError ? e.retryable : true;
-          if (retryable && retryCount < ctx.options.connectorMaxRetries) {
+          const classified = classifyConnectorError(e);
+          if (classified.retryable && retryCount < ctx.options.connectorMaxRetries) {
             retryCount++;
+            // Bounded exponential backoff; rate limits wait longer. Never bypasses provider limits.
+            const base = ctx.options.connectorRetryBaseMs * 2 ** (retryCount - 1);
+            await sleep(classified.class === "RATE_LIMITED" ? base * 4 : base);
             continue;
           }
           return finish({
             connector,
             status: "FAILED",
             items: [],
-            error: e instanceof Error ? e.message : String(e),
+            error: `[${classified.class}] ${e instanceof Error ? e.message : String(e)}`,
             retryCount,
           });
         }

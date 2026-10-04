@@ -40,6 +40,12 @@ export type ResearchRunStats = {
   budgetStops?: string[];
   /** Evidence linked to the originating opportunity (additional research). */
   linkedToOpportunity?: number;
+  /** Stages whose outputs are fully persisted (resume checkpoints). */
+  checkpoints?: string[];
+  /** Hard limits that stopped optional work (cost safety). */
+  limitStops?: string[];
+  /** Number of times a stage was resumed after a worker failure. */
+  resumed?: number;
 };
 
 export type ResearchRun = {
@@ -55,6 +61,10 @@ export type ResearchRun = {
   stats: ResearchRunStats;
   budgetLimitUsd: number;
   costUsd: number;
+  /** 0..100, written by the worker as stages complete. */
+  progressPercent: number;
+  /** Japanese description of what the worker is doing right now. */
+  currentAction: string | null;
   startedAt: string | null;
   completedAt: string | null;
   createdBy: string;

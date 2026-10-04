@@ -12,7 +12,9 @@ import type { Actor } from "@/domain/auth/authorization";
 import { DEFAULT_SCORING_WEIGHTS, ScoringWeightsSchema, type ScoringWeights } from "@/domain/scoring/criteria";
 import { createSupabaseAnalysisRepository } from "./supabase-analysis";
 import { createSupabaseExecutiveRepository } from "./supabase-executive";
+import { createSupabaseJobQueue } from "./supabase-jobs";
 import { DomainError } from "@/domain/shared/errors";
+import { RUN_ACTION_JA, RUN_PROGRESS } from "@/domain/research/progress";
 import {
   OPPORTUNITY_COLUMNS,
   mapAgentRun,
@@ -37,6 +39,7 @@ function must<T>(res: PgResult<T>, what: string): NonNullable<T> {
   if (res.error) {
     const code = res.error.code;
     if (code === "42501") throw new DomainError("FORBIDDEN", `${what}: ${res.error.message}`);
+    if (code === "23505") throw new DomainError("CONFLICT", `${what}: ${res.error.message}`);
     if (code === "23514") throw new DomainError("ILLEGAL_TRANSITION", `${what}: ${res.error.message}`);
     if (code === "23503") throw new DomainError("EVIDENCE_INTEGRITY", `${what}: ${res.error.message}`);
     throw new Error(`${what}: ${res.error.message}`);
@@ -53,8 +56,23 @@ const CLUSTER_SELECT = "id, organization_id, research_run_id, name, summary, sig
  * client so RLS enforces tenancy; organization_id is still written
  * explicitly and RLS rejects any mismatch.
  */
-export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, options: { system?: boolean } = {}): Repositories {
+/**
+ * options.system: service-role client (cron / worker). Every query still filters by
+ * the bound organization. options.onBehalfOf: audit rows are attributed to the
+ * job's owner (worker), instead of an anonymous system actor (cron).
+ */
+export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, options: { system?: boolean; onBehalfOf?: boolean } = {}): Repositories {
   const org = actor.organizationId;
+
+  /** Only partial output of an unfinished run with no opportunities may be discarded. */
+  const assertDiscardable = async (runId: string) => {
+    const run = must(await db.from("research_runs").select("status").eq("organization_id", org).eq("id", runId).single(), "run") as { status: string };
+    if (["COMPLETED", "PARTIAL_SUCCESS", "FAILED", "CANCELLED"].includes(run.status)) {
+      throw new DomainError("CONFLICT", "cannot discard data of a finished run");
+    }
+    const opps = must(await db.from("opportunities").select("id").eq("organization_id", org).eq("research_run_id", runId).limit(1), "run opportunities") as unknown[];
+    if (opps.length > 0) throw new DomainError("CONFLICT", "opportunities already reference this run");
+  };
 
   const research: ResearchRepository = {
     async createDirective({ directive, parser, parseMetadata }) {
@@ -127,6 +145,16 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
       if (patch.degraded !== undefined) update.degraded = patch.degraded;
       if (patch.stats !== undefined) update.stats = patch.stats;
       if (patch.costUsd !== undefined) update.cost_usd = patch.costUsd;
+      if (patch.progressPercent !== undefined) update.progress_percent = Math.round(patch.progressPercent);
+      if (patch.currentAction !== undefined) update.current_action = patch.currentAction?.slice(0, 200) ?? null;
+      if (patch.progressPercent === undefined && patch.currentAction === undefined) {
+        // Status change without explicit progress: derive it from the stage.
+        const current = must(await db.from("research_runs").select("status").eq("organization_id", org).eq("id", id).single(), "run status") as { status: string };
+        if (current.status !== to) {
+          update.progress_percent = RUN_PROGRESS[to];
+          update.current_action = RUN_ACTION_JA[to];
+        }
+      }
       return mapRun(must(await db.from("research_runs").update(update).eq("organization_id", org).eq("id", id).select().single(), `run -> ${to}`));
     },
   };
@@ -173,7 +201,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
       const rows = must(
         await db
           .from("evidence")
-          .insert(
+          .upsert(
             items.map((e) => ({
               organization_id: org,
               research_run_id: e.researchRunId,
@@ -187,6 +215,8 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
               language: e.language ?? null,
               country: e.country ?? null,
             })),
+            // Re-delivered jobs: an identical excerpt of the same source is skipped.
+            { onConflict: "source_item_id,text_hash", ignoreDuplicates: true },
           )
           .select(),
         "insert evidence",
@@ -207,44 +237,47 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
   const signals: SignalRepository = {
     async insertSignals(rows) {
       if (rows.length === 0) return [];
-      const inserted = must(
-        await db
-          .from("signals")
-          .insert(
-            rows.map((s) => ({
-              organization_id: org,
-              research_run_id: s.researchRunId,
-              persona: s.persona ?? null,
-              situation: s.situation ?? null,
-              problem: s.problem,
-              desired_outcome: s.desiredOutcome ?? null,
-              current_alternative: s.currentAlternative ?? null,
-              alternative_failure: s.alternativeFailure ?? null,
-              urgency_score: s.urgencyScore,
-              frequency_signal: s.frequencySignal,
-              willingness_to_pay_score: s.willingnessToPayScore,
-              switching_intent_score: s.switchingIntentScore,
-              trust_issue: s.trustIssue,
-              price_issue: s.priceIssue,
-              access_issue: s.accessIssue,
-              category: s.category ?? null,
-              location: s.location ?? null,
-              signal_type: s.signalType,
-              confidence: s.confidence,
-              language: s.language ?? null,
-              country: s.country ?? null,
-              extracted_by: s.extractedBy,
-              field_provenance: s.fieldProvenance ?? {},
-            })),
-          )
-          .select("id"),
-        "insert signals",
-      ) as Array<{ id: string }>;
-      const links = inserted.flatMap((row, i) =>
-        [...new Set(rows[i].evidenceIds)].map((evidenceId) => ({ signal_id: row.id, evidence_id: evidenceId, organization_id: org })),
-      );
-      if (links.length > 0) must(await db.from("signal_evidence").insert(links).select("signal_id"), "link signal evidence");
-      return signals.listSignals({ ids: inserted.map((r) => r.id) });
+      // One transaction per call: every signal is inserted together with its evidence links.
+      const res = await db.rpc("insert_signals_with_evidence", {
+        org,
+        rows: rows.map((s) => ({
+          research_run_id: s.researchRunId,
+          persona: s.persona ?? null,
+          situation: s.situation ?? null,
+          problem: s.problem,
+          desired_outcome: s.desiredOutcome ?? null,
+          current_alternative: s.currentAlternative ?? null,
+          alternative_failure: s.alternativeFailure ?? null,
+          urgency_score: s.urgencyScore,
+          frequency_signal: s.frequencySignal,
+          willingness_to_pay_score: s.willingnessToPayScore,
+          switching_intent_score: s.switchingIntentScore,
+          trust_issue: s.trustIssue,
+          price_issue: s.priceIssue,
+          access_issue: s.accessIssue,
+          category: s.category ?? null,
+          location: s.location ?? null,
+          signal_type: s.signalType,
+          confidence: s.confidence,
+          language: s.language ?? null,
+          country: s.country ?? null,
+          extracted_by: s.extractedBy,
+          field_provenance: s.fieldProvenance ?? {},
+          evidence_ids: [...new Set(s.evidenceIds)],
+        })),
+      });
+      const ids = (must(res as PgResult<unknown>, "insert signals") as unknown[]).map((x) => (typeof x === "string" ? x : String((x as Record<string, unknown>).insert_signals_with_evidence ?? x)));
+      return signals.listSignals({ ids });
+    },
+    async discardRunSignals(runId) {
+      await assertDiscardable(runId);
+      const rows = must(await db.from("signals").delete().eq("organization_id", org).eq("research_run_id", runId).select("id"), "discard signals") as unknown[];
+      return rows.length;
+    },
+    async discardRunClusters(runId) {
+      await assertDiscardable(runId);
+      const rows = must(await db.from("signal_clusters").delete().eq("organization_id", org).eq("research_run_id", runId).select("id"), "discard clusters") as unknown[];
+      return rows.length;
     },
     async setEmbeddings(rows) {
       // One round trip per 200 rows (RPC is security invoker → RLS applies).
@@ -331,7 +364,6 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
   const opportunities: OpportunityRepository = {
     async createOpportunity({ researchRunId, clusterId, draft, confidence, scoreTotal, momentum }) {
       const row: Record<string, unknown> = {
-        organization_id: org,
         research_run_id: researchRunId,
         cluster_id: clusterId,
         title: draft.title,
@@ -344,14 +376,11 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
       for (const [k, col] of Object.entries(OPPORTUNITY_COLUMNS)) {
         row[col] = (draft as Record<string, unknown>)[k] ?? null;
       }
-      const created = must(await db.from("opportunities").insert(row).select().single(), "create opportunity") as Record<string, unknown> & { id: string };
-      must(
-        await db
-          .from("opportunity_evidence")
-          .insert([...new Set(draft.evidenceIds)].map((evidenceId) => ({ opportunity_id: created.id, evidence_id: evidenceId, organization_id: org })))
-          .select("evidence_id"),
-        "link opportunity evidence",
-      );
+      // Opportunity + evidence links in one transaction (never an evidence-less opportunity).
+      const created = must(
+        await db.rpc("create_opportunity_with_evidence", { org, opp: row, evidence_ids: [...new Set(draft.evidenceIds)] }),
+        "create opportunity",
+      ) as Record<string, unknown>;
       return mapOpportunity(created);
     },
     async getOpportunity(id) {
@@ -659,11 +688,11 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
         // Scheduled jobs (service role): no auth.uid(), so write directly and mark as system.
         const res = await db.from("audit_logs").insert({
           organization_id: org,
-          actor_id: null,
+          actor_id: options.onBehalfOf ? actor.userId : null,
           action,
           entity_type: entityType,
           entity_id: entityId ?? null,
-          metadata: { ...(metadata ?? {}), system: true },
+          metadata: { ...(metadata ?? {}), system: true, ...(options.onBehalfOf ? { via: "worker" } : {}) },
         });
         if (res.error) throw new Error(`audit: ${res.error.message}`);
         return;
@@ -680,6 +709,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
   };
 
   return {
+    jobs: createSupabaseJobQueue(db, actor),
     research,
     evidence,
     signals,

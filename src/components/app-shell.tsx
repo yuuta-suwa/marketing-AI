@@ -10,9 +10,14 @@ const NAV = [
   { href: "/settings/connectors", label: "設定", icon: "⚙" },
 ];
 
-export function AppShell({ children, mode, email }: { children: ReactNode; mode: "supabase" | "demo"; email: string | null }) {
+export function AppShell({ children, mode, email, mock = false }: { children: ReactNode; mode: "supabase" | "demo"; email: string | null; mock?: boolean }) {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col">
+      {mock ? (
+        <div className="sticky top-0 z-20 bg-fuchsia-600 px-4 py-1 text-center text-xs font-bold text-white" data-testid="mock-badge" role="status">
+          MOCK CONNECTORS — 収集データは合成サンプルです（[MOCK]表示）。実際の市場調査ではありません
+        </div>
+      ) : null}
       {mode === "demo" ? (
         <div className="bg-amber-400 px-4 py-1 text-center text-xs font-semibold text-black" data-testid="demo-banner">
           DEMO MODE — データはこのサーバープロセス内にのみ保存されます（本番利用不可）
