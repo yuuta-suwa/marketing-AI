@@ -39,8 +39,10 @@ export async function createResearch(
     budgetLimitUsd: directive.budgetLimitUsd,
     parentRunId: options.parentRunId,
     opportunityId: options.opportunityId,
+    // Created directly as QUEUED: members never update runs (worker-controlled).
+    initialStatus: "QUEUED",
   });
-  const queued = await ctx.repos.research.transitionRun(run.id, "QUEUED");
+  const queued = run;
   if (result.costUsd > 0) {
     await ctx.repos.ops.recordCost({
       category: "AI",

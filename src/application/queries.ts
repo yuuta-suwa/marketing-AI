@@ -4,6 +4,7 @@ import { can } from "@/domain/auth/authorization";
 import { authorize } from "@/domain/auth/authorization";
 import { DomainError } from "@/domain/shared/errors";
 import { connectorReadiness } from "@/application/connectors/readiness";
+import { workerHealthStatus } from "@/domain/ops/worker-health";
 
 /** Read models for the UI. Pages call these; they never query storage directly. */
 
@@ -46,6 +47,9 @@ export async function getRunDetail(ctx: AppContext, runId: string) {
     ctx.repos.signals.listSignals({ runId, limit: 200 }),
     ctx.repos.jobs.list({ researchRunId: runId, limit: 20 }),
   ]);
+  const myReviews = new Map(
+    (await ctx.repos.executive.listQualityReviews(runId)).filter((r) => r.reviewedBy === ctx.actor.userId).map((r) => [r.entityId, r]),
+  );
   const queued = jobs.filter((j) => j.status === "QUEUED" || j.status === "RETRYING");
   const oldestQueued = queued.length ? Math.min(...queued.map((j) => Date.parse(j.availableAt))) : null;
   const errors = [
@@ -67,6 +71,9 @@ export async function getRunDetail(ctx: AppContext, runId: string) {
     estimatedCostUsd: run.costUsd,
     errors,
     jobs: [...jobs].reverse(),
+    canCancel: can(ctx.actor, "research.create"),
+    canReview: can(ctx.actor, "opportunity.decide"),
+    myReviews,
     /** Seconds the oldest ready job has waited for a worker (null = none waiting). */
     queueWaitSeconds: oldestQueued === null ? null : Math.max(0, (ctx.clock.now().getTime() - oldestQueued) / 1000),
   };
@@ -229,4 +236,21 @@ export async function getWatchCenter(ctx: AppContext) {
     ctx.repos.opportunities.listOpportunities({ limit: 100 }),
   ]);
   return { watchlists, notifications, opportunities };
+}
+
+/**
+ * Platform-operator-only operational status (Settings › Observability).
+ * Returns null for everyone else — organization owners are not operators.
+ */
+export async function getWorkerHealthView(ctx: AppContext) {
+  authorize(ctx.actor, "job.manage");
+  let raw;
+  try {
+    raw = await ctx.repos.ops.getWorkerHealth();
+  } catch (e) {
+    if (e instanceof DomainError && e.code === "FORBIDDEN") return null;
+    throw e;
+  }
+  const health = workerHealthStatus(raw.workers, new Date(raw.now), { oldestQueuedSeconds: raw.oldestQueuedSeconds });
+  return { ...raw, ...health };
 }

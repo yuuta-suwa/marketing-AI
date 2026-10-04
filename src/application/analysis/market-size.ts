@@ -1,5 +1,5 @@
 import type { AppContext } from "@/application/context";
-import { reassessOpportunity } from "@/application/opportunity/reassess";
+import { requestReassessment } from "@/application/opportunity/reassess";
 import type { StoredMarketEstimate } from "@/application/ports/repositories";
 import { estimateMarketSize, type MarketInput } from "@/domain/analysis/market-size";
 import { authorize } from "@/domain/auth/authorization";
@@ -26,6 +26,6 @@ export async function estimateOpportunityMarket(
     fieldProvenance: { marketSizeSummary: "CALCULATION" },
   });
   await ctx.repos.ops.audit("analysis.market_size", "opportunity", input.opportunityId, { method: input.method, value: saved.resultValue });
-  await reassessOpportunity(ctx, input.opportunityId, "market size estimated");
+  await requestReassessment(ctx, input.opportunityId, "market size estimated");
   return saved;
 }

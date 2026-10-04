@@ -4,6 +4,7 @@ import type { ClaimOptions, JobQueue, JobStore } from "@/application/jobs/ports"
 import type { Actor } from "@/domain/auth/authorization";
 import type { EnqueueJobInput, Job, JobStatus, JobType } from "@/domain/jobs/job";
 import { DomainError } from "@/domain/shared/errors";
+import type { WorkerSnapshot } from "@/domain/ops/worker-health";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- rows come from PostgREST untyped */
 type Row = Record<string, any>;
@@ -158,6 +159,22 @@ export class SupabaseJobStore implements JobStore {
       "find job",
     ) as Row;
     return { job: mapJob(existing), created: false };
+  }
+
+  async reportWorker(s: WorkerSnapshot & { currentJobId: string | null }) {
+    const res = await this.admin.from("worker_heartbeats").upsert({
+      worker_id: s.workerId,
+      started_at: s.startedAt,
+      last_heartbeat_at: s.lastHeartbeatAt,
+      jobs_processed: s.jobsProcessed,
+      jobs_failed: s.jobsFailed,
+      current_job_id: s.currentJobId,
+      current_job_type: s.currentJobType,
+      version: s.version,
+      app_env: s.appEnv,
+      diagnostics: s.diagnostics,
+    });
+    check(res, "worker heartbeat");
   }
 
   async stats() {

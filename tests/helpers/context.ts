@@ -23,6 +23,12 @@ export function testContext(
     actor?: Actor;
     ai?: AIProvider | null;
     connectors?: ConnectorRegistry | MarketConnector[];
+    /**
+     * true (default): trusted repositories, as used by the worker — most tests run
+     * the pipeline directly. false: a member's request-path repositories, which
+     * mirror the DB grants (worker-controlled data is rejected).
+     */
+    trusted?: boolean;
   } = {},
 ): AppContext & { db: MemoryDatabase } {
   const db = opts.db ?? new MemoryDatabase();
@@ -35,7 +41,7 @@ export function testContext(
   return {
     db,
     actor,
-    repos: createMemoryRepositories(db, actor, clock),
+    repos: createMemoryRepositories(db, actor, clock, { system: opts.trusted ?? true }),
     connectors,
     ai: opts.ai ?? null,
     embeddings,
@@ -58,7 +64,7 @@ export const TEST_WORKER_OPTIONS: WorkerOptions = {
 /** Worker over the test's memory DB; each job runs as its owner (system repos, org-scoped). */
 export function testWorker(
   ctx: AppContext & { db: MemoryDatabase },
-  overrides: { handlers?: JobHandlers; options?: Partial<WorkerOptions>; store?: MemoryJobStore } = {},
+  overrides: { handlers?: JobHandlers; options?: Partial<WorkerOptions>; store?: MemoryJobStore; mapContext?: (c: AppContext) => AppContext } = {},
 ) {
   const store = overrides.store ?? new MemoryJobStore(ctx.db, ctx.clock);
   const worker = new JobWorker({
@@ -68,7 +74,8 @@ export function testWorker(
     options: { ...TEST_WORKER_OPTIONS, ...overrides.options },
     contextFor: async (job: Job) => {
       const actor: Actor = { userId: job.userId ?? ctx.actor.userId, organizationId: job.organizationId, role: ctx.actor.role };
-      return { ...ctx, actor, repos: createMemoryRepositories(ctx.db, actor, ctx.clock, { system: true }) };
+      const workerCtx = { ...ctx, actor, repos: createMemoryRepositories(ctx.db, actor, ctx.clock, { system: true }) };
+      return overrides.mapContext ? overrides.mapContext(workerCtx) : workerCtx;
     },
   });
   return { worker, store };

@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ExecutiveRepository, LineageRow, StoredAdvisorSession, StoredFeedback, StoredNotification, StoredReport, StoredWatchlist } from "@/application/ports/repositories";
+import type { ExecutiveRepository, LineageRow, StoredAdvisorSession, StoredFeedback, StoredNotification, StoredReport, StoredWatchlist, StoredQualityReview } from "@/application/ports/repositories";
 import type { Actor } from "@/domain/auth/authorization";
 import { DomainError } from "@/domain/shared/errors";
 
@@ -83,7 +83,42 @@ const mapFeedback = (r: Row): StoredFeedback => ({
 
 export function createSupabaseExecutiveRepository(db: SupabaseClient, actor: Actor): ExecutiveRepository {
   const org = actor.organizationId;
+  const mapReview = (r: Row): StoredQualityReview => ({
+    id: r.id,
+    researchRunId: r.research_run_id,
+    entityType: r.entity_type,
+    entityId: r.entity_id,
+    useful: r.useful ?? null,
+    rating: r.rating ?? null,
+    decision: r.decision,
+    note: r.note ?? undefined,
+    reviewedBy: r.reviewed_by,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  });
   return {
+    async upsertQualityReview(input) {
+      const row: Record<string, unknown> = {
+        organization_id: org,
+        research_run_id: input.researchRunId,
+        entity_type: input.entityType,
+        entity_id: input.entityId,
+        reviewed_by: actor.userId,
+      };
+      if (input.useful !== undefined) row.useful = input.useful;
+      if (input.rating !== undefined) row.rating = input.rating;
+      if (input.decision !== undefined) row.decision = input.decision;
+      if (input.note !== undefined) row.note = input.note;
+      return mapReview(
+        must(
+          await db.from("quality_reviews").upsert(row, { onConflict: "organization_id,entity_type,entity_id,reviewed_by" }).select().single(),
+          "upsert quality review",
+        ) as Row,
+      );
+    },
+    async listQualityReviews(researchRunId) {
+      return (must(await db.from("quality_reviews").select().eq("organization_id", org).eq("research_run_id", researchRunId).limit(2000), "list quality reviews") as Row[]).map(mapReview);
+    },
     async saveAdvisorSession(opportunityId, c) {
       return mapAdvisor(
         must(

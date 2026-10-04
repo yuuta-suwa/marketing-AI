@@ -28,7 +28,13 @@ export async function fetchJson<T>(
       const retryable = res.status === 429 || res.status >= 500;
       throw new ConnectorError(connectorId, `HTTP ${res.status} from ${new URL(url).host}`, retryable, res.status);
     }
-    return (await res.json()) as T;
+    const text = await res.text();
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      // A 200 with HTML/garbage is a provider-side problem; retrying will not fix it.
+      throw new ConnectorError(connectorId, `invalid response: expected JSON from ${new URL(url).host}`, false, res.status);
+    }
   } catch (e) {
     if (e instanceof ConnectorError) throw e;
     const aborted = e instanceof Error && e.name === "AbortError";

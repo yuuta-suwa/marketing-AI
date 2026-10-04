@@ -1,5 +1,10 @@
 # Production Readiness Report — Phase 5
 
+> **Phase 6 update (2026-10-04):**
+> - Status remains **READY_WITH_LIMITATIONS**. Live validation is **BLOCKED_ON_LIVE_INFRASTRUCTURE** — see [LIVE_VALIDATION.md](LIVE_VALIDATION.md).
+> - The research-run permission gap listed in §5 is fixed.
+> - Local advisor lints found and fixed 41 missing FK indexes.
+
 Date: 2026-10-04 · Branch: `claude/market-radar-os-uyp7mf` · Baseline: `3610a8b` (v0.1.0, tag local only)
 
 ## Final status: **READY_WITH_LIMITATIONS**

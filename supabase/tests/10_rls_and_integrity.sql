@@ -31,6 +31,8 @@ begin
 end;
 $$;
 grant execute on all functions in schema tests to anon, authenticated;
+grant usage on schema tests to service_role;
+grant execute on all functions in schema tests to service_role;
 
 create function tests.login(uid uuid) returns void language plpgsql as $$
 begin
@@ -55,7 +57,7 @@ create temp table ids as
 select
   (select default_organization_id from public.profiles where id = '00000000-0000-0000-0000-00000000000a') as org_a,
   (select default_organization_id from public.profiles where id = '00000000-0000-0000-0000-00000000000b') as org_b;
-grant select on ids to authenticated, anon;
+grant select on ids to authenticated, anon, service_role;
 
 -- Carol becomes a viewer in Alice's org.
 insert into public.organization_members (organization_id, user_id, role)
@@ -72,6 +74,21 @@ select '10000000-0000-0000-0000-000000000001', org_a, '旅行市場の不満か�
 insert into public.research_runs (id, organization_id, directive_id, created_by)
 select '20000000-0000-0000-0000-000000000001', org_a, '10000000-0000-0000-0000-000000000001',
        '00000000-0000-0000-0000-00000000000a' from ids;
+select tests.expect_count('select count(*) from public.research_runs', 1, 'alice sees her run');
+select tests.expect_error($$
+  insert into public.research_runs (organization_id, directive_id, created_by, status)
+  select org_a, '10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'COMPLETED' from ids
+$$, 'runs cannot be created in a terminal state');
+
+-- Pipeline output is worker-only (Phase 6): members cannot write it directly.
+select tests.expect_error($$
+  insert into public.source_items (organization_id, research_run_id, connector_key, source_type, source_name, body, retrieved_at, content_hash, compliance_status)
+  select org_a, '20000000-0000-0000-0000-000000000001', 'manual_import', 'MANUAL', 'Manual', 'x', now(), repeat('b', 64), 'MANUAL_UPLOAD' from ids
+$$, 'members cannot insert source items directly (worker only)');
+reset role;
+
+-- The worker (service_role) writes pipeline output; integrity triggers still apply to it.
+set role service_role;
 insert into public.source_items (id, organization_id, research_run_id, connector_key, source_type,
   source_name, body, retrieved_at, content_hash, compliance_status)
 select '30000000-0000-0000-0000-000000000001', org_a, '20000000-0000-0000-0000-000000000001', 'manual_import',
@@ -81,8 +98,6 @@ insert into public.evidence (id, organization_id, research_run_id, source_item_i
 select '40000000-0000-0000-0000-000000000001', org_a, '20000000-0000-0000-0000-000000000001',
        '30000000-0000-0000-0000-000000000001', '空港からホテルまでの移動が分かりにくく', 'QUOTE', now() from ids;
 
-select tests.expect_count('select count(*) from public.research_runs', 1, 'alice sees her run');
-
 -- Evidence must be verbatim
 select tests.expect_error($$
   insert into public.evidence (organization_id, research_run_id, source_item_id, evidence_text, evidence_type, retrieved_at)
@@ -90,7 +105,7 @@ select tests.expect_error($$
          '存在しない引用文', 'QUOTE', now() from ids
 $$, 'fabricated evidence text is rejected');
 
--- Research run state machine
+-- Research run state machine (enforced even for the worker)
 select tests.expect_error($$
   update public.research_runs set status = 'COMPLETED' where id = '20000000-0000-0000-0000-000000000001'
 $$, 'DRAFT -> COMPLETED is illegal');
@@ -101,10 +116,6 @@ select tests.expect_count($$select count(*) from public.research_runs where star
 select tests.expect_error($$
   update public.research_runs set status = 'QUEUED' where id = '20000000-0000-0000-0000-000000000001'
 $$, 'backwards transition is illegal');
-select tests.expect_error($$
-  insert into public.research_runs (organization_id, directive_id, created_by, status)
-  select org_a, '10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-00000000000a', 'COMPLETED' from ids
-$$, 'runs cannot be created in a terminal state');
 
 -- Signals, clusters, opportunities
 insert into public.signals (id, organization_id, research_run_id, problem, signal_type, extracted_by)
@@ -122,12 +133,18 @@ select '60000000-0000-0000-0000-000000000001', org_a, '20000000-0000-0000-0000-0
 insert into public.opportunities (id, organization_id, research_run_id, cluster_id, title, pain)
 select '70000000-0000-0000-0000-000000000001', org_a, '20000000-0000-0000-0000-000000000001',
        '60000000-0000-0000-0000-000000000001', '空港アクセスナビ', '移動が分かりにくい' from ids;
+reset role;
+select tests.login('00000000-0000-0000-0000-00000000000a');
 
 select tests.expect_error($$
   update public.opportunities set status = 'VALIDATED' where id = '70000000-0000-0000-0000-000000000001'
 $$, 'cannot validate an opportunity without evidence');
+reset role;
+set role service_role;
 insert into public.opportunity_evidence (opportunity_id, evidence_id, organization_id)
 select '70000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', org_a from ids;
+reset role;
+select tests.login('00000000-0000-0000-0000-00000000000a');
 update public.opportunities set status = 'VALIDATED' where id = '70000000-0000-0000-0000-000000000001';
 update public.opportunities set status = 'EXPERIMENT_PROPOSED' where id = '70000000-0000-0000-0000-000000000001';
 select tests.expect_error($$
@@ -195,7 +212,9 @@ select tests.expect_count('select count(*) from public.audit_logs where organiza
   'bob cannot read alice audit log');
 select tests.expect_count('select count(*) from public.cost_ledger', 0, 'bob cannot read alice costs');
 
-update public.opportunities set title = 'hijacked' where id = '70000000-0000-0000-0000-000000000001';
+select tests.expect_error($$update public.opportunities set title = 'hijacked' where id = '70000000-0000-0000-0000-000000000001'$$,
+  'bob cannot rewrite opportunity content');
+update public.opportunities set status = 'REJECTED' where id = '70000000-0000-0000-0000-000000000001';
 select tests.expect_error($$
   insert into public.research_directives (organization_id, raw_input, objective, created_by)
   select org_a, 'x', 'x', '00000000-0000-0000-0000-00000000000b' from ids
@@ -225,7 +244,7 @@ select tests.expect_error($$
 $$, 'cross-tenant evidence link is rejected');
 
 reset role;
-select tests.expect_count($$select count(*) from public.opportunities where title = 'hijacked'$$, 0,
+select tests.expect_count($$select count(*) from public.opportunities where title = 'hijacked' or status = 'REJECTED'$$, 0,
   'bob update on alice opportunity affected no rows');
 
 -- ---------------------------------------------------------------------------
@@ -389,13 +408,21 @@ select tests.expect_count($$select count(*) from (select 1 where public.consume_
 select tests.expect_error($$select count(*) from private.rate_limit_events$$, 'rate limit table is not directly readable');
 select tests.expect_count($$select coalesce(sum(violations), 0)::bigint from public.integrity_report() where check_name <> 'clusters_without_signals'$$, 0,
   'integrity report: no orphan signals/opportunities, verbatim evidence, no duplicate items');
+select tests.expect_error($$select public.set_signal_embeddings((select org_a from ids),
+  jsonb_build_array(jsonb_build_object('id', '50000000-0000-0000-0000-000000000001', 'embedding', '[' || array_to_string(array_fill(0.03::float8, array[1536]), ',') || ']', 'model', 'x')))$$,
+  'members cannot write embeddings (worker only)');
+reset role;
+set role service_role;
 select tests.expect_count($$select public.set_signal_embeddings((select org_a from ids),
   jsonb_build_array(jsonb_build_object('id', '50000000-0000-0000-0000-000000000001', 'embedding', '[' || array_to_string(array_fill(0.01::float8, array[1536]), ',') || ']', 'model', 'test')))::bigint$$, 1,
-  'batch embedding update writes vectors');
+  'batch embedding update writes vectors (worker)');
+select tests.expect_count($$select public.set_signal_embeddings((select org_b from ids),
+  jsonb_build_array(jsonb_build_object('id', '50000000-0000-0000-0000-000000000001', 'embedding', '[' || array_to_string(array_fill(0.02::float8, array[1536]), ',') || ']', 'model', 'x')))::bigint$$, 0,
+  'batch embedding update scoped to another org cannot touch this tenant');
 reset role;
 select tests.login('00000000-0000-0000-0000-00000000000b');
-select tests.expect_count($$select public.set_signal_embeddings((select org_a from ids),
-  jsonb_build_array(jsonb_build_object('id', '50000000-0000-0000-0000-000000000001', 'embedding', '[' || array_to_string(array_fill(0.02::float8, array[1536]), ',') || ']', 'model', 'x')))::bigint$$, 0,
-  'batch embedding update cannot touch another tenant');
+select tests.expect_error($$select public.set_signal_embeddings((select org_a from ids),
+  jsonb_build_array(jsonb_build_object('id', '50000000-0000-0000-0000-000000000001', 'embedding', '[' || array_to_string(array_fill(0.02::float8, array[1536]), ',') || ']', 'model', 'x')))$$,
+  'bob cannot write embeddings');
 reset role;
 

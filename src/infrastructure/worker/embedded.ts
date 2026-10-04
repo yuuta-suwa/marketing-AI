@@ -1,4 +1,5 @@
 import "server-only";
+import { appEnv } from "../env-contract";
 import { runtimeMode } from "../runtime-mode";
 import { createWorkerRuntime, type WorkerRuntime } from "./runtime";
 
@@ -11,7 +12,7 @@ const g = globalThis as unknown as { __mroEmbeddedWorker?: { runtime: WorkerRunt
  */
 export function embeddedWorkerEnabled(): boolean {
   if (runtimeMode() === "demo") return true;
-  return process.env.NODE_ENV !== "production" && process.env.WORKER_MODE === "embedded";
+  return appEnv() === "local" && process.env.WORKER_MODE === "embedded";
 }
 
 /**

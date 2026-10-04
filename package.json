@@ -13,7 +13,9 @@
     "test:db": "bash scripts/test-db.sh",
     "test:e2e": "playwright test",
     "worker": "tsx --conditions=react-server --tsconfig tsconfig.json scripts/worker.ts",
-    "smoke:live": "tsx --conditions=react-server --tsconfig tsconfig.json scripts/live-smoke.ts"
+    "smoke:live": "tsx --conditions=react-server --tsconfig tsconfig.json scripts/live-smoke.ts",
+    "golden-run": "tsx --conditions=react-server --tsconfig tsconfig.json scripts/golden-run.ts",
+    "verify:hosted-db": "bash scripts/verify-hosted-db.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.131.0",

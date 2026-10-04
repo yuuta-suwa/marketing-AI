@@ -207,7 +207,10 @@ export async function runResearchStage(ctx: AppContext, runId: string, stage: Re
   const runner = new AgentRunner({ ops: ctx.repos.ops, budget, logger: log, maxCallsPerAgent: ctx.options.maxCallsPerAgent, llmCalls });
   const qualityOf = (id: string) => ctx.connectors.get(id)?.sourceQuality ?? 0.3;
   const done = (next: ResearchStage | null): StageResult => ({ runId, status: state.status, stats: state.stats, next });
-  const end = async (to: "PARTIAL_SUCCESS" | "FAILED", reason: string): Promise<StageResult> => {
+  const end = async (to: "PARTIAL_SUCCESS" | "FAILED", primary: string): Promise<StageResult> => {
+    // Keep the root causes visible (failed connectors, limits) — not only the symptom.
+    const causes = state.degraded && (state.stats.connectorsFailed?.length || state.stats.limitStops?.length || state.stats.budgetStops?.length) ? finalReason(state.stats) : null;
+    const reason = causes && !primary.includes("失敗:") ? `${primary} / ${causes}` : primary;
     await state.move(to, reason);
     await ctx.repos.ops.audit("research.completed", "research_run", runId, { status: to, stats: state.stats });
     return { runId, status: to, reason, stats: state.stats, next: null };

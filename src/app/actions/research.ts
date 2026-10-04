@@ -7,6 +7,10 @@ import { createResearch, toManualItems } from "@/application/research/create-res
 import { csvToManualItems } from "@/application/research/csv-import";
 import { parseManualInput } from "@/application/research/manual-input";
 import { dispatchResearch } from "@/application/research/dispatch";
+import { requestResearchCancellation } from "@/application/research/cancel";
+import { recordQualityReview } from "@/application/golden/review";
+import { REVIEW_DECISIONS } from "@/application/ports/repositories";
+import { z } from "zod";
 import { ResearchRequestSchema } from "@/domain/research/directive";
 import { DomainError } from "@/domain/shared/errors";
 import { buildAppContext, requireSession } from "@/infrastructure/server-context";
@@ -69,4 +73,56 @@ export async function startResearchAction(_prev: ActionState, formData: FormData
   }
   revalidatePath("/research/runs");
   redirect(`/research/runs/${runId}`);
+}
+
+/** The approved way to stop a run (members never update run status directly). */
+export async function cancelResearchAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const runId = z.uuid().parse(formData.get("runId"));
+    const ctx = buildAppContext(await requireSession());
+    const status = await requestResearchCancellation(ctx, runId);
+    revalidatePath(`/research/runs/${runId}`);
+    return { ok: true, message: status === "CANCELLING" ? "キャンセルを要求しました（処理中のステップの終了後に停止します）" : "調査をキャンセルしました" };
+  } catch (e) {
+    return toActionError(e);
+  }
+}
+
+const ReviewSchema = z.object({
+  researchRunId: z.uuid(),
+  entityType: z.enum(["SIGNAL", "OPPORTUNITY"]),
+  entityId: z.uuid(),
+  rating: z.coerce.number().int().min(1).max(5).optional(),
+  decision: z.enum(REVIEW_DECISIONS).optional(),
+  useful: z.enum(["yes", "no"]).optional(),
+  note: z.string().max(2000).optional(),
+});
+
+/** Human quality review (Golden Run review table / KPI baseline). Humans only — never generated. */
+export async function qualityReviewAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  try {
+    const input = ReviewSchema.parse({
+      researchRunId: formData.get("researchRunId"),
+      entityType: formData.get("entityType"),
+      entityId: formData.get("entityId"),
+      rating: formData.get("rating") || undefined,
+      decision: formData.get("decision") || undefined,
+      useful: formData.get("useful") || undefined,
+      note: formData.get("note") || undefined,
+    });
+    const ctx = buildAppContext(await requireSession());
+    await recordQualityReview(ctx, {
+      researchRunId: input.researchRunId,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      rating: input.rating ?? null,
+      decision: input.decision,
+      useful: input.useful === undefined ? undefined : input.useful === "yes",
+      note: input.note,
+    });
+    revalidatePath(`/research/runs/${input.researchRunId}`);
+    return { ok: true, message: "評価を保存しました" };
+  } catch (e) {
+    return toActionError(e);
+  }
 }

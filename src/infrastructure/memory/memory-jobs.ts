@@ -4,6 +4,7 @@ import { roleAtLeast } from "@/domain/auth/authorization";
 import { assertJobTransition, type EnqueueJobInput, type Job, type JobStatus } from "@/domain/jobs/job";
 import { RESEARCH_STAGE_JOB_TYPES } from "@/domain/jobs/research-jobs";
 import { DomainError } from "@/domain/shared/errors";
+import type { WorkerSnapshot } from "@/domain/ops/worker-health";
 import type { Clock } from "@/lib/clock";
 import { newId } from "@/lib/ids";
 import type { MemoryDatabase } from "./memory-db";
@@ -204,6 +205,10 @@ export class MemoryJobStore implements JobStore {
 
   async enqueueFor(organizationId: string, userId: string | null, input: EnqueueJobInput) {
     return insert(this.db, this.clock, organizationId, userId, input);
+  }
+
+  async reportWorker(s: WorkerSnapshot & { currentJobId: string | null }) {
+    this.db.workers.set(s.workerId, s);
   }
 
   async stats() {

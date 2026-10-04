@@ -1,3 +1,4 @@
+import { demoStoreAllowed } from "./env-contract";
 import { supabasePublicConfig } from "./supabase/env";
 
 export type RuntimeMode = "supabase" | "demo" | "unconfigured";
@@ -11,8 +12,7 @@ export type RuntimeMode = "supabase" | "demo" | "unconfigured";
  */
 export function runtimeMode(): RuntimeMode {
   if (supabasePublicConfig()) return "supabase";
-  // A production build honours demo mode only for an explicit test deployment
-  // (ENABLE_MOCK_CONNECTORS=true, e.g. E2E); validateEnvironment reports misuse.
-  if (process.env.MRO_DEMO_MODE === "true" && (process.env.NODE_ENV !== "production" || process.env.ENABLE_MOCK_CONNECTORS === "true")) return "demo";
+  // Demo store: APP_ENV=local, or staging with the explicit test opt-in. Never production.
+  if (demoStoreAllowed()) return "demo";
   return "unconfigured";
 }

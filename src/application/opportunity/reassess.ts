@@ -85,3 +85,17 @@ export async function reassessOpportunity(ctx: AppContext, opportunityId: string
   });
   return updated;
 }
+
+/**
+ * Request path: system scores are worker-controlled, so user-triggered
+ * analyses enqueue a reassessment instead of writing scores themselves.
+ */
+export async function requestReassessment(ctx: AppContext, opportunityId: string, reason: string): Promise<void> {
+  await ctx.repos.jobs.enqueue({
+    jobType: "OPPORTUNITY_REASSESSMENT",
+    idempotencyKey: `reassess:${opportunityId}:${ctx.clock.now().getTime()}:${Math.random().toString(36).slice(2, 8)}`,
+    opportunityId,
+    payload: { reason: reason.slice(0, 200) },
+    priority: 50,
+  });
+}

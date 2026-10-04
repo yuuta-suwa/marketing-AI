@@ -19,7 +19,8 @@ The web process only **enqueues** jobs. It never executes collection or analysis
 
 | Variable | Process | Secret | Notes |
 | --- | --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | both | no | Supabase project URL |
+| `APP_ENV` | both | no | `local` / `staging` / `production`. **Required for production builds.** It drives the mock, demo and embedded-worker policy (see below). If it is missing on a production build, the app assumes `production` and reports an error. |
+| `NEXT_PUBLIC_SUPABASE_URL` | both | no | Supabase project URL (https outside local) |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | web | no | Publishable or legacy anon key (`NEXT_PUBLIC_SUPABASE_ANON_KEY` is accepted). RLS protects data. |
 | `SUPABASE_SERVICE_ROLE_KEY` | worker (+ web for cron) | **yes** | Bypasses RLS. The worker filters every query by the job's organization. Never put it in a browser or a user-request path. |
 | `CRON_SECRET` | web | **yes** | Bearer token for `/api/cron/*`. At least 16 characters. Vercel Cron sends it. |
@@ -66,13 +67,29 @@ When a hard limit is hit:
 - the run ends as `PARTIAL_SUCCESS`;
 - `stats.limitStops` lists what was skipped, and the run page shows it under 「省略した処理（上限）」.
 
-### DEVELOPMENT_ONLY
+### Operator tooling (never deployed)
+
+| Variable | Used by |
+| --- | --- |
+| `GOLDEN_RUN_USER_ID`, `GOLDEN_RUN_ORG_ID`, `GOLDEN_RUN_TIMEOUT_SECONDS` | `npm run golden-run` |
+| `SUPABASE_DB_URL` (secret) | `npm run verify:hosted-db` |
+| `SUPABASE_ACCESS_TOKEN` (secret), `SUPABASE_PROJECT_REF` | `scripts/supabase-advisors.sh` |
+| `APP_VERSION` | worker health / `/api/health` (defaults to `VERCEL_GIT_COMMIT_SHA` / `GIT_COMMIT_SHA` / `dev`) |
+
+### DEVELOPMENT_ONLY — mock and demo policy (by `APP_ENV`)
+
+| | local | staging | production |
+| --- | --- | --- | --- |
+| `CONNECTOR_MOCK_MODE=true` | allowed | needs `ENABLE_MOCK_CONNECTORS=true` | rejected. An override needs `ENABLE_MOCK_CONNECTORS=true` **and** `ALLOW_MOCK_IN_PRODUCTION=true`, and is shown as **PRODUCTION MOCK OVERRIDE** (banner, `/api/health`, logs) |
+| `MRO_DEMO_MODE=true` | allowed | needs `ENABLE_MOCK_CONNECTORS=true` (E2E test deployment) | **never** |
+| `WORKER_MODE=embedded` | allowed | error | error |
 
 | Variable | Rule |
 | --- | --- |
-| `MRO_DEMO_MODE` | In-process demo store. Rejected when `NODE_ENV=production` unless `ENABLE_MOCK_CONNECTORS=true` marks an explicit test deployment (the E2E suite runs `next start`). |
-| `CONNECTOR_MOCK_MODE` | Real adapters run against canned responses. Items are labelled `[MOCK]` with `metadata.synthetic=true`, and a persistent **MOCK CONNECTORS** banner is shown. Allowed only when `NODE_ENV != production` or `ENABLE_MOCK_CONNECTORS=true`. Otherwise the process **refuses** (EnvironmentError). |
-| `ENABLE_MOCK_CONNECTORS` | Explicit opt-in for a staging or E2E test deployment. **Never set it in production.** |
+| `MRO_DEMO_MODE` | In-process demo store (see the table above). |
+| `CONNECTOR_MOCK_MODE` | Real adapters run against canned responses. Items are labelled `[MOCK]` with `metadata.synthetic=true`, a persistent **MOCK CONNECTORS** banner is shown, and spend is recorded as $0. When not allowed, the process **refuses** (EnvironmentError). |
+| `ENABLE_MOCK_CONNECTORS` | Explicit opt-in for a staging or E2E test deployment. |
+| `ALLOW_MOCK_IN_PRODUCTION` | Second flag for a production mock override. Never set it in normal operation. |
 | `CONNECTOR_MOCK_FAIL` | Comma-separated connector ids that fail in mock mode |
 | `MRO_LOG_IN_TESTS` | Print structured logs in vitest |
 
@@ -85,6 +102,21 @@ When a hard limit is hit:
   - The login page lists the misconfigured variable names while the app is unconfigured.
   - A production process that asks for mock connectors without the opt-in throws when it builds a context.
 - **Missing credentials never fall back to mock data.** The connector stays DISABLED with READY_NEEDS_CREDENTIALS. A run with no runnable source fails with an explicit reason.
+
+## Credential diagnostics
+
+`src/infrastructure/credentials.ts` reports each Golden Run credential by **name** with one status:
+
+| Status | Meaning |
+| --- | --- |
+| `MISSING` | not set |
+| `INVALID` | malformed, or rejected by the provider (401/403). Example: a service-role key equal to the publishable key. |
+| `EXPIRED` | rejected with an expiry message |
+| `RATE_LIMITED` | 429 during the live check |
+| `CONFIGURED` | set and well-formed; not live-checked, or the check was inconclusive (timeout / network) |
+| `READY` | the live check succeeded |
+
+The worker publishes its statuses in worker health (Settings › Observability, platform operators only). `npm run golden-run -- --preflight-only` prints them after live checks. Values are never printed.
 
 ## Checking an environment
 

@@ -12,6 +12,8 @@ export const JOB_TYPES = [
   "RED_TEAM",
   "DAILY_BRIEF",
   "WATCHLIST_REFRESH",
+  /** Recompute system score + confidence after an analysis (worker-only writes). */
+  "OPPORTUNITY_REASSESSMENT",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
@@ -133,6 +135,7 @@ export const JOB_TYPE_LABEL_JA: Record<JobType, string> = {
   RED_TEAM: "Red Team",
   DAILY_BRIEF: "Daily Brief",
   WATCHLIST_REFRESH: "Watchlist更新",
+  OPPORTUNITY_REASSESSMENT: "スコア再評価",
 };
 
 export const JOB_STATUS_LABEL_JA: Record<JobStatus, string> = {

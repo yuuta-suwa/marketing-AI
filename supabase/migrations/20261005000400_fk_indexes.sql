@@ -1,0 +1,72 @@
+-- Phase 6 (advisor remediation): cover every foreign key with an index whose leading
+-- columns are the FK columns. Found by scripts/sql/advisor-lints.sql (Supabase lint
+-- 'unindexed_foreign_keys'); avoids sequential scans on cascades and on per-run /
+-- per-opportunity lookups (e.g. opportunities.research_run_id).
+-- Generated from the migrated catalog; additive and idempotent.
+
+create index if not exists advisor_sessions_created_by_fk_idx on public.advisor_sessions (created_by);
+create index if not exists advisor_sessions_opportunity_id_organization_id_fk_idx on public.advisor_sessions (opportunity_id, organization_id);
+create index if not exists advisor_sessions_organization_id_fk_idx on public.advisor_sessions (organization_id);
+create index if not exists agent_runs_opportunity_id_organization_id_fk_idx on public.agent_runs (opportunity_id, organization_id);
+create index if not exists agent_runs_research_run_id_organization_id_fk_idx on public.agent_runs (research_run_id, organization_id);
+create index if not exists audit_logs_actor_id_fk_idx on public.audit_logs (actor_id);
+create index if not exists business_models_opportunity_id_organization_id_fk_idx on public.business_models (opportunity_id, organization_id);
+create index if not exists business_models_organization_id_fk_idx on public.business_models (organization_id);
+create index if not exists cluster_signals_cluster_id_organization_id_fk_idx on public.cluster_signals (cluster_id, organization_id);
+create index if not exists cluster_signals_organization_id_fk_idx on public.cluster_signals (organization_id);
+create index if not exists cluster_signals_signal_id_organization_id_fk_idx on public.cluster_signals (signal_id, organization_id);
+create index if not exists competitors_opportunity_id_organization_id_fk_idx on public.competitors (opportunity_id, organization_id);
+create index if not exists compliance_checks_checked_by_fk_idx on public.compliance_checks (checked_by);
+create index if not exists connector_runs_research_run_id_organization_id_fk_idx on public.connector_runs (research_run_id, organization_id);
+create index if not exists cost_ledger_agent_run_id_organization_id_fk_idx on public.cost_ledger (agent_run_id, organization_id);
+create index if not exists cost_ledger_research_run_id_organization_id_fk_idx on public.cost_ledger (research_run_id, organization_id);
+create index if not exists decisions_advisor_session_id_organization_id_fk_idx on public.decisions (advisor_session_id, organization_id);
+create index if not exists decisions_decided_by_fk_idx on public.decisions (decided_by);
+create index if not exists decisions_opportunity_id_organization_id_fk_idx on public.decisions (opportunity_id, organization_id);
+create index if not exists decisions_organization_id_fk_idx on public.decisions (organization_id);
+create index if not exists evidence_research_run_id_organization_id_fk_idx on public.evidence (research_run_id, organization_id);
+create index if not exists evidence_source_item_id_organization_id_fk_idx on public.evidence (source_item_id, organization_id);
+create index if not exists experiments_approved_by_fk_idx on public.experiments (approved_by);
+create index if not exists experiments_created_by_fk_idx on public.experiments (created_by);
+create index if not exists experiments_decided_by_fk_idx on public.experiments (decided_by);
+create index if not exists experiments_opportunity_id_organization_id_fk_idx on public.experiments (opportunity_id, organization_id);
+create index if not exists feedback_events_experiment_id_organization_id_fk_idx on public.feedback_events (experiment_id, organization_id);
+create index if not exists feedback_events_opportunity_id_organization_id_fk_idx on public.feedback_events (opportunity_id, organization_id);
+create index if not exists feedback_events_recorded_by_fk_idx on public.feedback_events (recorded_by);
+create index if not exists jobs_opportunity_id_organization_id_fk_idx on public.jobs (opportunity_id, organization_id);
+create index if not exists jobs_research_run_id_organization_id_fk_idx on public.jobs (research_run_id, organization_id);
+create index if not exists jobs_user_id_fk_idx on public.jobs (user_id);
+create index if not exists market_estimates_opportunity_id_organization_id_fk_idx on public.market_estimates (opportunity_id, organization_id);
+create index if not exists notifications_organization_id_fk_idx on public.notifications (organization_id);
+create index if not exists notifications_watchlist_id_fk_idx on public.notifications (watchlist_id);
+create index if not exists opportunities_cluster_id_organization_id_fk_idx on public.opportunities (cluster_id, organization_id);
+create index if not exists opportunities_created_by_fk_idx on public.opportunities (created_by);
+create index if not exists opportunities_research_run_id_organization_id_fk_idx on public.opportunities (research_run_id, organization_id);
+create index if not exists opportunity_evidence_evidence_id_organization_id_fk_idx on public.opportunity_evidence (evidence_id, organization_id);
+create index if not exists opportunity_evidence_opportunity_id_organization_id_fk_idx on public.opportunity_evidence (opportunity_id, organization_id);
+create index if not exists opportunity_evidence_organization_id_fk_idx on public.opportunity_evidence (organization_id);
+create index if not exists opportunity_evidence_source_run_id_organization_id_fk_idx on public.opportunity_evidence (source_run_id, organization_id);
+create index if not exists opportunity_scores_opportunity_id_organization_id_fk_idx on public.opportunity_scores (opportunity_id, organization_id);
+create index if not exists opportunity_scores_scoring_settings_id_organization_id_fk_idx on public.opportunity_scores (scoring_settings_id, organization_id);
+create index if not exists organizations_created_by_fk_idx on public.organizations (created_by);
+create index if not exists profiles_default_organization_id_fk_idx on public.profiles (default_organization_id);
+create index if not exists quality_reviews_reviewed_by_fk_idx on public.quality_reviews (reviewed_by);
+create index if not exists red_team_reviews_opportunity_id_organization_id_fk_idx on public.red_team_reviews (opportunity_id, organization_id);
+create index if not exists red_team_reviews_organization_id_fk_idx on public.red_team_reviews (organization_id);
+create index if not exists red_team_reviews_research_run_id_organization_id_fk_idx on public.red_team_reviews (research_run_id, organization_id);
+create index if not exists reports_created_by_fk_idx on public.reports (created_by);
+create index if not exists reports_opportunity_id_organization_id_fk_idx on public.reports (opportunity_id, organization_id);
+create index if not exists reports_research_run_id_organization_id_fk_idx on public.reports (research_run_id, organization_id);
+create index if not exists research_directives_created_by_fk_idx on public.research_directives (created_by);
+create index if not exists research_runs_created_by_fk_idx on public.research_runs (created_by);
+create index if not exists research_runs_directive_id_organization_id_fk_idx on public.research_runs (directive_id, organization_id);
+create index if not exists research_runs_opportunity_id_organization_id_fk_idx on public.research_runs (opportunity_id, organization_id);
+create index if not exists research_runs_parent_run_id_organization_id_fk_idx on public.research_runs (parent_run_id, organization_id);
+create index if not exists scoring_settings_created_by_fk_idx on public.scoring_settings (created_by);
+create index if not exists signal_clusters_research_run_id_organization_id_fk_idx on public.signal_clusters (research_run_id, organization_id);
+create index if not exists signal_evidence_evidence_id_organization_id_fk_idx on public.signal_evidence (evidence_id, organization_id);
+create index if not exists signal_evidence_organization_id_fk_idx on public.signal_evidence (organization_id);
+create index if not exists signal_evidence_signal_id_organization_id_fk_idx on public.signal_evidence (signal_id, organization_id);
+create index if not exists signals_research_run_id_organization_id_fk_idx on public.signals (research_run_id, organization_id);
+create index if not exists source_items_research_run_id_organization_id_fk_idx on public.source_items (research_run_id, organization_id);
+create index if not exists watchlists_user_id_fk_idx on public.watchlists (user_id);

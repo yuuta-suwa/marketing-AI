@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { validateEnvironment } from "@/infrastructure/env-contract";
+import { appVersion, validateEnvironment } from "@/infrastructure/env-contract";
 import { runtimeMode } from "@/infrastructure/runtime-mode";
 import { mockConnectorsActive } from "@/infrastructure/server-context";
 
@@ -15,7 +15,16 @@ export async function GET() {
   const mode = runtimeMode();
   const ok = env.errors.length === 0 && mode !== "unconfigured";
   return NextResponse.json(
-    { ok, mode, mockConnectors: mockConnectorsActive(), configErrors: env.errors.length, time: new Date().toISOString() },
+    {
+      ok,
+      appEnv: env.appEnv,
+      mode,
+      mockConnectors: mockConnectorsActive(),
+      productionMockOverride: env.mockOverride,
+      configErrors: env.errors.length,
+      version: appVersion(),
+      time: new Date().toISOString(),
+    },
     { status: ok ? 200 : 503, headers: { "cache-control": "no-store" } },
   );
 }

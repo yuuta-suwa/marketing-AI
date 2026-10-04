@@ -3,6 +3,8 @@ import { getRunDetail } from "@/application/queries";
 import { ConfidenceBadge, RunStatusPill, Tag } from "@/components/badges";
 import { OpportunityCard } from "@/components/opportunity-card";
 import { RunProgress } from "@/components/run-progress";
+import { CancelRunForm } from "@/components/forms/cancel-run-form";
+import { QualityReviewForm } from "@/components/forms/quality-review-form";
 import { Card, EmptyState, Notice, PageHeader, SectionTitle } from "@/components/ui";
 import { RUN_TYPE_LABEL_JA } from "@/domain/research/run";
 import { SIGNAL_TYPE_LABEL_JA } from "@/domain/signal/signal";
@@ -32,6 +34,7 @@ export default async function RunDetailPage({ params }: PageProps<"/research/run
         realtime={runtimeMode() === "supabase"}
         initial={{ status: d.run.status, progressPercent: d.run.progressPercent, currentAction: d.run.currentAction }}
       />
+      {active && d.canCancel ? <CancelRunForm runId={d.run.id} /> : null}
       {active && waitingForWorker ? (
         <Notice tone="warn">ジョブが{Math.round(d.queueWaitSeconds! / 60)}分以上待機しています。バックグラウンドワーカー（npm run worker）が稼働しているか確認してください。</Notice>
       ) : null}
@@ -168,6 +171,32 @@ export default async function RunDetailPage({ params }: PageProps<"/research/run
       <div className="space-y-3">
         {d.opportunities.length === 0 ? <EmptyState>{active ? "分析中…" : "事業機会は生成されませんでした"}</EmptyState> : d.opportunities.map((o) => <OpportunityCard key={o.id} opportunity={o} />)}
       </div>
+
+      {!active && d.canReview && (d.opportunities.length > 0 || d.signals.length > 0) ? (
+        <>
+          <SectionTitle hint="人間のみが入力">Quality review</SectionTitle>
+          <div className="space-y-2" data-testid="quality-review">
+            {d.opportunities.map((o) => {
+              const r = d.myReviews.get(o.id);
+              return (
+                <div key={o.id} className="rounded-xl border border-line bg-surface p-3 text-sm">
+                  <p className="font-semibold">{o.title}</p>
+                  <QualityReviewForm researchRunId={d.run.id} entityType="OPPORTUNITY" entityId={o.id} rating={r?.rating ?? null} decision={r?.decision ?? "NONE"} useful={null} />
+                </div>
+              );
+            })}
+            {d.signals.slice(0, 20).map((s) => {
+              const r = d.myReviews.get(s.id);
+              return (
+                <div key={s.id} className="rounded-xl border border-line bg-surface p-3 text-xs">
+                  <p>{s.problem}</p>
+                  <QualityReviewForm researchRunId={d.run.id} entityType="SIGNAL" entityId={s.id} rating={null} decision="NONE" useful={r?.useful ?? null} />
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
 
       <SectionTitle>Clusters</SectionTitle>
       {d.clusters.length === 0 ? <EmptyState>—</EmptyState> : (

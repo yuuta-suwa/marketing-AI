@@ -15,6 +15,8 @@ import { createAIProvider, createEmbeddingProvider } from "../ai/provider-factor
 import { MemoryJobStore } from "../memory/memory-jobs";
 import { createMemoryRepositories } from "../memory/memory-repositories";
 import { runtimeMode } from "../runtime-mode";
+import { appEnv, appVersion } from "../env-contract";
+import { credentialStatusMap, diagnoseCredentials } from "../credentials";
 import { createConnectorRegistryForEnv, DEMO_ACTOR, demoDatabase, pipelineOptionsFromEnv } from "../server-context";
 import { createSupabaseAdminClient } from "../supabase/admin-client";
 import { SupabaseJobStore } from "../supabase/supabase-jobs";
@@ -47,6 +49,10 @@ export function workerOptionsFromEnv(): WorkerOptions {
     leaseSeconds,
     heartbeatMs: Math.max(5_000, Math.floor((leaseSeconds * 1000) / 4)),
     batchSize: intEnv("WORKER_CONCURRENCY", 1, 1, 10),
+    version: appVersion(),
+    appEnv: appEnv(),
+    // Format-level credential statuses (names only); live checks: npm run smoke:live.
+    diagnostics: () => credentialStatusMap(diagnoseCredentials(process.env)),
     backoff: { baseSeconds: 15, maxSeconds: 900 },
   };
 }

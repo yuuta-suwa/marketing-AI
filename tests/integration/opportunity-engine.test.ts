@@ -55,6 +55,9 @@ describe("opportunity engine", () => {
     const updated = await ctx.repos.opportunities.getOpportunity(opp.id);
     expect(updated?.marketSizeSummary).toContain("2,000,000,000");
     expect(updated?.fieldProvenance.marketSizeSummary).toBe("CALCULATION");
+    // Scores are worker-controlled: analyses enqueue a reassessment job.
+    expect((await ctx.repos.jobs.list({ status: "QUEUED" })).some((j) => j.jobType === "OPPORTUNITY_REASSESSMENT")).toBe(true);
+    await runQueuedJobs(ctx);
     const after = await ctx.repos.opportunities.latestScore(opp.id);
     expect(after?.score.missing).not.toContain("marketSize");
     expect(after?.score.missing).not.toContain("monetizationQuality");
@@ -118,6 +121,7 @@ describe("opportunity engine", () => {
     await updateScoringWeights(ctx, w);
     await compareOpportunityBusinessModels(ctx, opps[0].id);
     await runCfoAnalysis(ctx, { opportunityId: opps[0].id });
+    await runQueuedJobs(ctx);
     expect((await ctx.repos.opportunities.latestScore(opps[0].id))?.weights.painSeverity).toBe(25);
   });
 });

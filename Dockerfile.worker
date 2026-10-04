@@ -3,12 +3,14 @@
 #   docker run --env-file worker.env market-radar-worker
 FROM node:22-slim
 WORKDIR /app
-ENV NODE_ENV=production
+# docker build --build-arg APP_VERSION=$(git rev-parse --short HEAD) …  (shown in worker health)
+ARG APP_VERSION=dev
+ENV NODE_ENV=production APP_VERSION=${APP_VERSION}
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY tsconfig.json ./
 COPY src ./src
-COPY scripts/worker.ts scripts/live-smoke.ts ./scripts/
+COPY scripts/worker.ts scripts/live-smoke.ts scripts/golden-run.ts ./scripts/
 USER node
 # SIGTERM → graceful shutdown (stop claiming, finish/release the current job).
 STOPSIGNAL SIGTERM

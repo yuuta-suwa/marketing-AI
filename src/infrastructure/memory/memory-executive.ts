@@ -102,6 +102,35 @@ export function createMemoryExecutiveRepository(db: MemoryDatabase, actor: Actor
       if (!n || n.userId !== actor.userId) throw new DomainError("NOT_FOUND", "notification not found");
       db.notifications.set(id, { ...n, readAt: now() });
     },
+    async upsertQualityReview(input) {
+      const target =
+        input.entityType === "SIGNAL" ? db.signals.get(input.entityId) : db.opportunities.get(input.entityId);
+      if (!target || target.organizationId !== org || target.researchRunId !== input.researchRunId) {
+        throw new DomainError("NOT_FOUND", "review target not found in this run");
+      }
+      if (input.rating !== undefined && input.rating !== null && (input.rating < 1 || input.rating > 5)) throw new DomainError("VALIDATION", "rating must be 1-5");
+      const key = `${org}:${input.entityType}:${input.entityId}:${actor.userId}`;
+      const prev = db.qualityReviews.get(key);
+      const row = {
+        id: prev?.id ?? newId(),
+        organizationId: org,
+        researchRunId: input.researchRunId,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        useful: input.useful !== undefined ? input.useful : (prev?.useful ?? null),
+        rating: input.rating !== undefined ? input.rating : (prev?.rating ?? null),
+        decision: input.decision ?? prev?.decision ?? ("NONE" as const),
+        note: input.note ?? prev?.note,
+        reviewedBy: actor.userId,
+        createdAt: prev?.createdAt ?? now(),
+        updatedAt: now(),
+      };
+      db.qualityReviews.set(key, row);
+      return strip(row);
+    },
+    async listQualityReviews(researchRunId) {
+      return [...db.qualityReviews.values()].filter((r) => r.organizationId === org && r.researchRunId === researchRunId).map(strip);
+    },
     async recordFeedback(input) {
       ownOpp(input.opportunityId);
       if (input.experimentId) {

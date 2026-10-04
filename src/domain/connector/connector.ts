@@ -108,6 +108,7 @@ export function classifyConnectorError(e: unknown): { class: ConnectorErrorClass
   if (status === 429) return { class: "RATE_LIMITED", retryable: true };
   if (status !== undefined && status >= 500) return { class: "UPSTREAM_5XX", retryable: true };
   if (status !== undefined && status >= 400) return { class: "BAD_REQUEST", retryable: false };
+  if (/invalid response/i.test(message)) return { class: "INVALID_RESPONSE", retryable: false };
   if (/timed out|timeout|abort/i.test(message)) return { class: "TIMEOUT", retryable: true };
   if (/network error|fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|socket/i.test(message)) return { class: "NETWORK", retryable: true };
   if (/not configured|未設定|missing credential/i.test(message)) return { class: "NOT_CONFIGURED", retryable: false };

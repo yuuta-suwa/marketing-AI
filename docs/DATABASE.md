@@ -94,3 +94,18 @@ Additional tables:
 - RPCs: `enqueue_job`, `cancel_job`, `requeue_dead_letter` (users, security definer); `claim_jobs`, `heartbeat_job`, `complete_job`, `fail_job`, `release_job`, `job_queue_stats` (service_role only).
 - `research_runs.progress_percent`, `current_action`; `research_runs` and `jobs` added to `supabase_realtime`.
 - Idempotency: `evidence.text_hash` + unique `(source_item_id, text_hash)`; unique `opportunities(cluster_id)`; `create_opportunity_with_evidence` and `insert_signals_with_evidence` write rows and their evidence links in one transaction.
+
+## Phase 6 (`20261005000100` … `20261005000400`)
+
+- **Worker-controlled data**
+  - `research_runs` is insert-only for members, in a clean state.
+  - Pipeline tables and system scores are written by `service_role` only; there are column-level grants on `opportunities`.
+  - `request_research_cancellation(run_id)` is SECURITY DEFINER, with membership checked; its only possible transition is to CANCELLED.
+  - `jobs.job_type` gains `OPPORTUNITY_REASSESSMENT`.
+- **`worker_heartbeats`** (service_role only) and **`private.platform_operators`**.
+  - `worker_health_summary()` is for operators only. It returns no job ids.
+- **`quality_reviews`:** human ratings and decisions per signal or opportunity.
+  - One row per reviewer per entity. Reviewers can edit only their own rows.
+  - A trigger checks that the target belongs to the run and organization.
+- **Foreign-key indexes:** 66 covering indexes, generated from the catalog by the advisor lints.
+- **Verification:** `scripts/sql/verify-schema.sql` (read-only; runs locally and against the hosted DB). Local advisor lints: `scripts/sql/advisor-lints.sql`.

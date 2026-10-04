@@ -10,12 +10,24 @@ const NAV = [
   { href: "/settings/connectors", label: "設定", icon: "⚙" },
 ];
 
-export function AppShell({ children, mode, email, mock = false }: { children: ReactNode; mode: "supabase" | "demo"; email: string | null; mock?: boolean }) {
+export function AppShell({
+  children,
+  mode,
+  email,
+  mock = false,
+  productionOverride = false,
+}: {
+  children: ReactNode;
+  mode: "supabase" | "demo";
+  email: string | null;
+  mock?: boolean;
+  productionOverride?: boolean;
+}) {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col">
       {mock ? (
         <div className="sticky top-0 z-20 bg-fuchsia-600 px-4 py-1 text-center text-xs font-bold text-white" data-testid="mock-badge" role="status">
-          MOCK CONNECTORS — 収集データは合成サンプルです（[MOCK]表示）。実際の市場調査ではありません
+          {productionOverride ? "PRODUCTION MOCK OVERRIDE — " : ""}MOCK CONNECTORS — 収集データは合成サンプルです（[MOCK]表示）。実際の市場調査ではありません
         </div>
       ) : null}
       {mode === "demo" ? (

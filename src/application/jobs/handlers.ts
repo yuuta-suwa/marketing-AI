@@ -4,6 +4,7 @@ import { publishDailyBrief } from "@/application/executive/daily-brief";
 import { checkWatchlists } from "@/application/executive/watchlist";
 import { ADDITIONAL_RESEARCH_TYPES, startAdditionalResearch } from "@/application/opportunity/additional-research";
 import { runRedTeam } from "@/application/opportunity/red-team";
+import { reassessOpportunity } from "@/application/opportunity/reassess";
 import { failResearchRun, JOB_TYPE_STAGE, runResearchStage, STAGE_JOB_TYPE, type ResearchStage } from "@/application/research/pipeline";
 import { researchStageKey } from "@/application/research/dispatch";
 import { JobError, type Job } from "@/domain/jobs/job";
@@ -81,6 +82,11 @@ export function createJobHandlers(): JobHandlers {
       return { reportId: report?.id ?? null };
     },
     WATCHLIST_REFRESH: async ({ ctx }) => checkWatchlists(ctx),
+    OPPORTUNITY_REASSESSMENT: async ({ job, ctx }) => {
+      const reason = typeof job.payload.reason === "string" ? job.payload.reason : "reassessment";
+      const updated = await reassessOpportunity(ctx, requireOpportunity(job), reason);
+      return { scoreTotal: updated.scoreTotal, confidence: updated.confidence };
+    },
 
     // A research stage that can never succeed fails its run (never left "in progress").
     onDeadLetter: async (job, ctx, error) => {

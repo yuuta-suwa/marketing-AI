@@ -1,5 +1,5 @@
 import type { AppContext } from "@/application/context";
-import { reassessOpportunity } from "@/application/opportunity/reassess";
+import { requestReassessment } from "@/application/opportunity/reassess";
 import type { StoredBusinessModel } from "@/application/ports/repositories";
 import { BUSINESS_MODEL_LABEL_JA, compareBusinessModels } from "@/domain/analysis/business-model";
 import { analyzeUnitEconomics, defaultCfoAssumptions, type CfoInputs, type InputProvenance } from "@/domain/analysis/cfo";
@@ -62,6 +62,6 @@ export async function runCfoAnalysis(
   const analysis = analyzeUnitEconomics(inputs, provenance, (input.currency ?? primary.unitEconomics?.currency ?? "JPY").toUpperCase());
   await ctx.repos.analysis.setUnitEconomics(primary.id, { ...analysis, inputs, provenance });
   await ctx.repos.ops.audit("analysis.cfo", "opportunity", input.opportunityId, { model: primary.modelType, warnings: analysis.warnings.length });
-  await reassessOpportunity(ctx, input.opportunityId, "cfo analysis");
+  await requestReassessment(ctx, input.opportunityId, "cfo analysis");
   return { model: primary, analysis };
 }

@@ -1,4 +1,5 @@
 import type { EnqueueJobInput, Job, JobStatus } from "@/domain/jobs/job";
+import type { WorkerSnapshot } from "@/domain/ops/worker-health";
 
 /**
  * Queue port used by user requests (frontend / server actions). Bound to the
@@ -36,4 +37,6 @@ export interface JobStore {
   /** Enqueue on behalf of a job's owner (stage chaining). Idempotent. */
   enqueueFor(organizationId: string, userId: string | null, input: EnqueueJobInput): Promise<{ job: Job; created: boolean }>;
   stats(): Promise<Array<{ status: JobStatus; count: number; oldest: string | null }>>;
+  /** Publishes this worker's liveness (worker_heartbeats). Best effort. */
+  reportWorker(snapshot: WorkerSnapshot & { currentJobId: string | null }): Promise<void>;
 }

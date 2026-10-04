@@ -11,6 +11,7 @@ import { DomainError } from "@/domain/shared/errors";
 import { mockConnectorsAllowed, resolveMockConnectorOptions, validateEnvironment, ENV_CONTRACT } from "@/infrastructure/env-contract";
 
 const migration = readFileSync(join(__dirname, "../../supabase/migrations/20261004000100_job_queue.sql"), "utf8");
+const lockdown = readFileSync(join(__dirname, "../../supabase/migrations/20261005000100_worker_controlled_data.sql"), "utf8");
 
 describe("job state machine", () => {
   it("matches private.job_transition_allowed() in the migration exactly", () => {
@@ -29,7 +30,7 @@ describe("job state machine", () => {
   });
 
   it("job types and statuses match the SQL check constraints", () => {
-    for (const t of JOB_TYPES) expect(migration).toContain(`'${t}'`);
+    for (const t of JOB_TYPES) expect(lockdown).toContain(`'${t}'`); // latest jobs_job_type_check
     for (const s of JOB_STATUSES) expect(migration).toContain(`'${s}'`);
   });
 
@@ -98,6 +99,7 @@ describe("hard limits (cost safety)", () => {
 describe("environment contract", () => {
   const prodCore = {
     NODE_ENV: "production",
+    APP_ENV: "production",
     NEXT_PUBLIC_SUPABASE_URL: "https://x.supabase.co",
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "pk",
     SUPABASE_SERVICE_ROLE_KEY: "sr",
@@ -115,16 +117,16 @@ describe("environment contract", () => {
     expect(r.errors.join("\n")).toMatch(/CONNECTOR_MOCK_MODE=true is rejected/);
     expect(r.errors.join("\n")).toMatch(/MRO_DEMO_MODE/);
     expect(r.errors.join("\n")).toMatch(/WORKER_MODE=embedded/);
-    expect(() => resolveMockConnectorOptions({ NODE_ENV: "production", CONNECTOR_MOCK_MODE: "true" })).toThrow(/rejected in production/);
+    expect(() => resolveMockConnectorOptions({ NODE_ENV: "production", CONNECTOR_MOCK_MODE: "true" })).toThrow(/rejected for APP_ENV=production/);
   });
 
   it("mocks are allowed outside production or with the explicit opt-in (and then flagged)", () => {
     expect(mockConnectorsAllowed({ NODE_ENV: "development" })).toBe(true);
     expect(resolveMockConnectorOptions({ NODE_ENV: "test", CONNECTOR_MOCK_MODE: "true", CONNECTOR_MOCK_FAIL: "x, estat" })).toEqual({ fail: ["x", "estat"] });
-    const staging = validateEnvironment("web", { ...prodCore, CONNECTOR_MOCK_MODE: "true", ENABLE_MOCK_CONNECTORS: "true", MRO_DEMO_MODE: "true" });
+    const staging = validateEnvironment("web", { NODE_ENV: "production", APP_ENV: "staging", CONNECTOR_MOCK_MODE: "true", ENABLE_MOCK_CONNECTORS: "true", MRO_DEMO_MODE: "true" });
     expect(staging.errors).toEqual([]);
-    expect(staging.warnings.join(" ")).toMatch(/Mock connectors are ENABLED/);
-    expect(staging.warnings.join(" ")).toMatch(/Test deployment: demo store/);
+    expect(staging.warnings.join(" ")).toMatch(/Mock connectors are ENABLED on staging/);
+    expect(staging.warnings.join(" ")).toMatch(/Staging test deployment: in-process demo store/);
     // Never a silent fallback: no mock flag → live connectors, whatever credentials exist.
     expect(resolveMockConnectorOptions({ NODE_ENV: "production" })).toBeUndefined();
   });

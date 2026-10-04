@@ -106,10 +106,7 @@ The **Live** column says whether the component was exercised against real extern
 - **No hosted Supabase project.** `supabase db advisors` (security and performance) could not be run.
   - Manual review of the new SQL: every SECURITY DEFINER function sets `search_path = ''` and revokes PUBLIC.
   - Worker RPCs are granted to `service_role` only.
-- **Members can update their own organization's `research_runs` rows.**
-  - This was the pre-existing policy, and the state-machine trigger still applies.
-  - With the worker in place, user requests only need DRAFT → QUEUED.
-  - Narrowing the update policy to that transition is recommended once the worker is live.
+- ~~**Members can update their own organization's `research_runs` rows.**~~ **Resolved in Phase 6.** Members have no UPDATE on runs; cancellation goes through an RPC. Pipeline output and system scores are worker-only. See `docs/SUPABASE_ADVISOR_REPORT.md` §B.
 - **The `jobs.payload` of `RESEARCH_COLLECTION` holds the manual text a member pasted.**
   - Members of the same organization can read it. That is the same audience as `source_items`.
 - **Dev-only npm audit finding.**

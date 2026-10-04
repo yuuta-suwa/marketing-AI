@@ -9,6 +9,8 @@ import type {
   SignalRepository,
 } from "@/application/ports/repositories";
 import type { Actor } from "@/domain/auth/authorization";
+import type { ResearchRunStatus } from "@/domain/research/run-state-machine";
+import type { WorkerSnapshot } from "@/domain/ops/worker-health";
 import { DEFAULT_SCORING_WEIGHTS, ScoringWeightsSchema, type ScoringWeights } from "@/domain/scoring/criteria";
 import { createSupabaseAnalysisRepository } from "./supabase-analysis";
 import { createSupabaseExecutiveRepository } from "./supabase-executive";
@@ -120,6 +122,7 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
             budget_limit_usd: input.budgetLimitUsd,
             parent_run_id: input.parentRunId ?? null,
             opportunity_id: input.opportunityId ?? null,
+            status: input.initialStatus ?? "DRAFT",
             created_by: actor.userId,
           })
           .select()
@@ -138,6 +141,10 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
       let q = db.from("research_runs").select().eq("organization_id", org).order("created_at", { ascending: false }).range(from, from + (options.limit ?? 50) - 1);
       if (options.opportunityId) q = q.eq("opportunity_id", options.opportunityId);
       return must(await q, "list runs").map(mapRun);
+    },
+    async requestCancellation(runId) {
+      const res = await db.rpc("request_research_cancellation", { run_id: runId });
+      return must(res as PgResult<string>, "request cancellation") as ResearchRunStatus | "CANCELLING";
     },
     async transitionRun(id, to, patch = {}) {
       const update: Record<string, unknown> = { status: to };
@@ -613,6 +620,22 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
       if (res.error) throw new Error(`spend: ${res.error.message}`);
       return Number(res.data ?? 0);
     },
+    async listCostEntries(runId) {
+      const rows = must(await db.from("cost_ledger").select().eq("organization_id", org).eq("research_run_id", runId).limit(5000), "run cost entries") as Array<Record<string, unknown>>;
+      return rows.map((r) => ({
+        category: r.category as never,
+        provider: r.provider as string,
+        model: (r.model as string | null) ?? undefined,
+        connectorKey: (r.connector_key as string | null) ?? undefined,
+        agentName: (r.agent_name as string | null) ?? undefined,
+        inputTokens: Number(r.input_tokens ?? 0),
+        outputTokens: Number(r.output_tokens ?? 0),
+        units: Number(r.units ?? 0),
+        amountUsd: Number(r.amount_usd),
+        researchRunId: runId,
+        occurredAt: r.occurred_at as string,
+      }));
+    },
     async spendByRun(runId) {
       const rows = must(await db.from("cost_ledger").select("amount_usd").eq("organization_id", org).eq("research_run_id", runId), "run spend") as Array<{ amount_usd: string | number }>;
       return rows.reduce((n, r) => n + Number(r.amount_usd), 0);
@@ -676,6 +699,11 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
           .single(),
         "upsert connector setting",
       );
+    },
+    async getWorkerHealth() {
+      const res = await db.rpc("worker_health_summary");
+      const data = must(res as PgResult<{ workers: WorkerSnapshot[]; oldestQueuedSeconds: number | null; now: string }>, "worker health");
+      return { workers: data.workers ?? [], oldestQueuedSeconds: data.oldestQueuedSeconds === null ? null : Number(data.oldestQueuedSeconds), now: data.now };
     },
     async consumeRateLimit(bucket, maxEvents, windowSeconds) {
       if (options.system) return true; // scheduled jobs are not user traffic

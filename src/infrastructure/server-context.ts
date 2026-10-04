@@ -21,7 +21,11 @@ export const DEMO_ACTOR: Actor = { userId: "00000000-0000-4000-8000-000000000001
 
 const globalStore = globalThis as unknown as { __mroDemoDb?: MemoryDatabase };
 export function demoDatabase(): MemoryDatabase {
-  globalStore.__mroDemoDb ??= new MemoryDatabase();
+  if (!globalStore.__mroDemoDb) {
+    globalStore.__mroDemoDb = new MemoryDatabase();
+    // The single demo user operates the in-process demo platform.
+    globalStore.__mroDemoDb.platformOperators.add(DEMO_ACTOR.userId);
+  }
   return globalStore.__mroDemoDb;
 }
 

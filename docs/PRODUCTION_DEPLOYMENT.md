@@ -19,14 +19,21 @@ Mobile / PWA ──► Vercel (Next.js web)  ──enqueue──►  Supabase Po
 2. Apply the migrations in filename order:
    ```bash
    supabase link --project-ref <ref>
-   supabase db push            # supabase/migrations/*.sql (10 files)
+   supabase db push            # supabase/migrations/*.sql (14 files)
+   SUPABASE_DB_URL='postgresql://…' npm run verify:hosted-db   # schema, RLS, grants, realtime, migration history, lints
    ```
-   `20261004000100_job_queue.sql` adds `jobs`, the worker RPCs, progress columns, the idempotency constraints and the Realtime publication entries.
+   - `20261004000100_job_queue.sql` adds `jobs`, the worker RPCs, progress columns, the idempotency constraints and the Realtime publication entries.
+   - Phase 6 adds:
+     - `20261005000100` — worker-controlled data lockdown and the cancellation RPC;
+     - `20261005000200` — worker health and platform operators;
+     - `20261005000300` — human quality reviews;
+     - `20261005000400` — foreign-key indexes.
+   - Seed a platform operator: `insert into private.platform_operators (user_id) values ('<uuid>');` (SQL editor).
 3. **Realtime:** confirm `research_runs` and `jobs` appear under Database → Publications → `supabase_realtime`. The migration adds them when the publication exists.
 4. **Auth:**
    - Site URL is the app URL. Redirect URL is `<app>/auth/callback`.
    - Enable the Email (password) provider. Turn email confirmation on.
-5. **Advisors:** run `supabase db advisors` (or Dashboard → Advisors) for both security and performance. Resolve any ERROR-level finding before going live, and record warnings in `docs/SECURITY.md`.
+5. **Advisors:** run `bash scripts/supabase-advisors.sh` (Management API) or Dashboard → Advisors, for both security and performance. Fix every CRITICAL or HIGH finding. Record the rest in `docs/SUPABASE_ADVISOR_REPORT.md` §C.
 6. **Keys:**
    - The web app gets the publishable key.
    - The worker gets the service-role key.
@@ -98,8 +105,9 @@ Automatic recurring *research* is not enabled. Turn it on only after reviewing t
 
 | Endpoint | Use | Healthy |
 | --- | --- | --- |
-| `GET /api/health` (web) | Uptime monitor, deploy gate | `200 {ok:true, mode:"supabase", mockConnectors:false, configErrors:0}` |
-| `GET :$WORKER_HEALTH_PORT/healthz` (worker) | Container liveness and readiness | `200 {ok:true, queue:[…]}`. It returns 503 if the DB is unreachable. |
+| `GET /api/health` (web) | Uptime monitor, deploy gate | `200 {ok:true, appEnv:"production", mode:"supabase", mockConnectors:false, productionMockOverride:false, configErrors:0, version}` |
+| `GET :$WORKER_HEALTH_PORT/healthz` (worker) | Container liveness and readiness | `200 {ok:true, worker:{workerId, startedAt, lastHeartbeatAt, jobsProcessed, jobsFailed, currentJobType, version, diagnostics}, queue:[…]}`. It returns 503 if the DB is unreachable. |
+| Settings › Observability › Worker Health (platform operators only) | Operators | `HEALTHY` (heartbeat ≤ 90 s). `DEGRADED`: the heartbeat is 90 s–5 min old, the failure rate is above 50 %, or a job has waited more than 5 min. `OFFLINE`: no heartbeat for 5 min. |
 | Settings › Observability | Operators | No growing dead-letter list. Jobs do not sit `QUEUED` for more than a minute. The run page warns when a job has waited over 60 s for a worker. |
 
 **Alert on:**
@@ -121,7 +129,11 @@ Automatic recurring *research* is not enabled. Turn it on only after reviewing t
 - **Database:** there are no destructive migrations in this release. If the job queue must be removed, run a reviewed down-script, but first stop the worker and confirm that no `PROCESSING` jobs remain. Do not drop `jobs` while runs are in progress.
 - To stop all background work immediately, scale the worker to 0. Queued jobs wait safely, and runs show the "waiting for worker" notice.
 
-## 8. Release tag
+## 8. Live validation
+
+See [`LIVE_VALIDATION.md`](LIVE_VALIDATION.md) for the runbook: verify-hosted-db → advisors → smoke:live → golden-run → human review. It also defines the PRODUCTION_READY threshold.
+
+## 9. Release tag
 
 The annotated tag `v0.1.0` exists locally at `3610a8b`. The build environment's git proxy only permits pushing the working branch. A maintainer with push rights should run:
 

@@ -4,6 +4,7 @@ import { appAccess } from "@/lib/auth-guard";
 import { AppShell } from "@/components/app-shell";
 import { getSession, mockConnectorsActive } from "@/infrastructure/server-context";
 import { runtimeMode } from "@/infrastructure/runtime-mode";
+import { productionMockOverride } from "@/infrastructure/env-contract";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   // Always request-time: auth and tenant data must never be prerendered.
@@ -12,7 +13,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const session = mode === "unconfigured" ? null : await getSession();
   if (appAccess(mode, Boolean(session)) === "login" || !session) redirect("/login");
   return (
-    <AppShell mode={session.mode} email={session.email} mock={mockConnectorsActive()}>
+    <AppShell mode={session.mode} email={session.email} mock={mockConnectorsActive()} productionOverride={productionMockOverride()}>
       {children}
     </AppShell>
   );

@@ -47,4 +47,23 @@ for f in "${ROOT}"/supabase/tests/[1-9]*.sql; do
   "${RUN_AS[@]}" "${PSQL[@]}" -f "$f" 2>&1 \
     | sed -e 's/^psql:[^ ]* NOTICE:  /  /' | grep -v '^\s*$'
 done
+if [[ -n "${EXTRA_SQL:-}" ]]; then
+  echo "› extra SQL ${EXTRA_SQL}"
+  "${RUN_AS[@]}" "${PG_BIN}/psql" -h "${WORK}" -p "${PORT}" -U postgres -d postgres -v ON_ERROR_STOP=1 -q -At -f "${EXTRA_SQL}"
+fi
+
+echo "› schema verification (scripts/sql/verify-schema.sql)"
+"${RUN_AS[@]}" "${PSQL[@]}" -f "${ROOT}/scripts/sql/verify-schema.sql" 2>&1 \
+  | sed -e 's/^psql:[^ ]* NOTICE:  /  /' | grep -v '^\s*$'
+
+echo "› advisor lints (local approximation, scripts/sql/advisor-lints.sql)"
+"${RUN_AS[@]}" "${PG_BIN}/psql" -h "${WORK}" -p "${PORT}" -U postgres -d postgres -v ON_ERROR_STOP=1 -q \
+  -f "${ROOT}/scripts/sql/advisor-lints.sql" > "${ADVISOR_OUT:-${WORK}/advisor-lints.txt}"
+grep -cE '^ (ERROR|WARN|INFO) ' "${ADVISOR_OUT:-${WORK}/advisor-lints.txt}" | sed 's/^/  advisor findings: /' || true
+if grep -qE '^ ERROR ' "${ADVISOR_OUT:-${WORK}/advisor-lints.txt}"; then
+  echo "advisor lints: ERROR-level findings" >&2
+  grep -E '^ ERROR ' "${ADVISOR_OUT:-${WORK}/advisor-lints.txt}" >&2
+  exit 1
+fi
+
 echo 'ALL DATABASE TESTS PASSED'

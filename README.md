@@ -50,6 +50,8 @@ npm run dev            # http://localhost:3000
 | `npm run test:e2e` | Playwright（モバイルビューポート、デモモードの本番ビルド） |
 | `npm run worker` | バックグラウンドワーカー（調査ジョブを実行。本番は Vercel とは別プロセス） |
 | `npm run smoke:live` | 実API疎通チェック（最小リクエスト）。`-- --workflow` で実データ調査シナリオ |
+| `npm run golden-run` | Phase 6 Golden Research Run（実インフラ＋実データ。MOCK不可。資格情報が無ければ BLOCKED を返す） |
+| `npm run verify:hosted-db` | ホストされた Supabase のスキーマ・RLS・権限・Realtime 検証（`SUPABASE_DB_URL`） |
 
 ## Docs
 
@@ -57,4 +59,5 @@ npm run dev            # http://localhost:3000
 [AGENTS](docs/AGENTS.md) · [CONNECTORS](docs/CONNECTORS.md) · [COMPLIANCE](docs/COMPLIANCE.md) ·
 [SECURITY](docs/SECURITY.md) · [FRIDAY_INTEGRATION](docs/FRIDAY_INTEGRATION.md) · [DEPLOYMENT](docs/DEPLOYMENT.md) ·
 [TESTING](docs/TESTING.md) · [IMPLEMENTATION_STATUS](docs/IMPLEMENTATION_STATUS.md) · Handoffs [M1](docs/HANDOFF_M1.md) [M2](docs/HANDOFF_M2.md) [M3](docs/HANDOFF_M3.md) [M4](docs/HANDOFF_M4.md) · [RELEASE v0.1.0](docs/RELEASE_v0.1.0.md) ·
+Phase 6: [LIVE_VALIDATION](docs/LIVE_VALIDATION.md) · [GOLDEN_RESEARCH_RUN](docs/GOLDEN_RESEARCH_RUN.md) · [SUPABASE_ADVISOR_REPORT](docs/SUPABASE_ADVISOR_REPORT.md) · [MARKET_INTELLIGENCE_QUALITY_REVIEW](docs/MARKET_INTELLIGENCE_QUALITY_REVIEW.md) ·
 Phase 5: [READINESS AUDIT](docs/PRODUCTION_READINESS_AUDIT.md) · [READINESS REPORT](docs/PRODUCTION_READINESS_REPORT.md) · [ENVIRONMENT](docs/ENVIRONMENT.md) · [PRODUCTION_DEPLOYMENT](docs/PRODUCTION_DEPLOYMENT.md) · [FRIDAY_CURRENT_CAPABILITIES](docs/FRIDAY_CURRENT_CAPABILITIES.md)

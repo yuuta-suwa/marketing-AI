@@ -20,6 +20,7 @@ import type { ConfidenceLevel } from "@/domain/shared/confidence";
 import type { MarketSignal, StoredSignal } from "@/domain/signal/signal";
 import type { NewSourceItem, SourceItem } from "@/domain/source/source-item";
 import type { JobQueue } from "@/application/jobs/ports";
+import type { WorkerSnapshot } from "@/domain/ops/worker-health";
 
 /**
  * Persistence ports. Implementations: in-memory (tests, demo) and Supabase
@@ -41,7 +42,15 @@ export interface ResearchRepository {
     budgetLimitUsd: number;
     parentRunId?: string;
     opportunityId?: string;
+    /** Users create runs directly as QUEUED; they never UPDATE runs afterwards. */
+    initialStatus?: "DRAFT" | "QUEUED";
   }): Promise<ResearchRun>;
+  /**
+   * The approved user path to stop a run: cancels its queued jobs, asks the
+   * worker to stop a processing one. Returns the resulting run status
+   * ("CANCELLING" while a worker is still stopping).
+   */
+  requestCancellation(runId: string): Promise<ResearchRunStatus | "CANCELLING">;
   getRun(id: string): Promise<ResearchRun | null>;
   listRuns(options?: { limit?: number; offset?: number; opportunityId?: string }): Promise<ResearchRun[]>;
   transitionRun(
@@ -251,6 +260,8 @@ export interface OpsRepository {
   recordCost(entry: CostEntry): Promise<void>;
   spendSince(since: Date): Promise<number>;
   spendByRun(runId: string): Promise<number>;
+  /** Cost ledger rows of one run (unit-economics baseline). */
+  listCostEntries(runId: string): Promise<Array<CostEntry & { occurredAt: string }>>;
   getBudget(): Promise<OrgBudget>;
   getScoringWeights(): Promise<{ id: string | null; weights: ScoringWeights }>;
   /** Admin: replace the active scoring weights (validated to sum 100 in app and DB). */
@@ -261,6 +272,8 @@ export interface OpsRepository {
   audit(action: string, entityType: string, entityId?: string, metadata?: Record<string, unknown>): Promise<void>;
   /** Sliding-window per-user limiter; false when the limit is reached. */
   consumeRateLimit(bucket: string, maxEvents: number, windowSeconds: number): Promise<boolean>;
+  /** Admins: platform worker liveness (no cross-tenant job ids) + own queue age. */
+  getWorkerHealth(): Promise<{ workers: WorkerSnapshot[]; oldestQueuedSeconds: number | null; now: string }>;
 }
 
 export type StoredCompetitor = {
@@ -396,7 +409,28 @@ export type LineageRow = {
   feedbackCount: number;
 };
 
+export const REVIEW_DECISIONS = ["NONE", "DEEP_DIVE", "EXPERIMENT", "HOLD", "REJECT"] as const;
+export type ReviewDecision = (typeof REVIEW_DECISIONS)[number];
+
+/** Human quality review of a signal or opportunity (editable; never generated). */
+export type StoredQualityReview = {
+  id: string;
+  researchRunId: string;
+  entityType: "SIGNAL" | "OPPORTUNITY";
+  entityId: string;
+  useful: boolean | null;
+  rating: number | null;
+  decision: ReviewDecision;
+  note?: string;
+  reviewedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export interface ExecutiveRepository {
+  /** Creates or updates the current user's review of one signal/opportunity. */
+  upsertQualityReview(input: { researchRunId: string; entityType: "SIGNAL" | "OPPORTUNITY"; entityId: string; useful?: boolean | null; rating?: number | null; decision?: ReviewDecision; note?: string }): Promise<StoredQualityReview>;
+  listQualityReviews(researchRunId: string): Promise<StoredQualityReview[]>;
   saveAdvisorSession(opportunityId: string, result: CouncilResult): Promise<StoredAdvisorSession>;
   listAdvisorSessions(opportunityId: string): Promise<StoredAdvisorSession[]>;
   saveReport(input: Omit<StoredReport, "id" | "createdAt">): Promise<StoredReport>;

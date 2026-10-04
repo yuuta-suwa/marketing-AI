@@ -11,8 +11,10 @@ import type {
   StoredCluster,
 } from "@/application/ports/repositories";
 import type { Actor } from "@/domain/auth/authorization";
+import type { ResearchRun } from "@/domain/research/run";
 import { assertVerbatim } from "@/domain/evidence/evidence";
 import { assertOpportunityTransition, CEO_GATED_STATUSES, HUMAN_GATED_STATUSES } from "@/domain/opportunity/status";
+import { roleAtLeast } from "@/domain/auth/authorization";
 import { RUN_ACTION_JA, RUN_PROGRESS } from "@/domain/research/progress";
 import { assertRunTransition, isTerminalRunStatus } from "@/domain/research/run-state-machine";
 import { DEFAULT_SCORING_WEIGHTS, ScoringWeightsSchema } from "@/domain/scoring/criteria";
@@ -37,6 +39,14 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
   const now = () => clock.now().toISOString();
   const mine = <T extends { organizationId: string }>(row: T | undefined): T | undefined =>
     row && row.organizationId === org ? row : undefined;
+
+  /**
+   * Mirrors the Phase 6 grants: worker-controlled data (run state, pipeline
+   * output, system scores) is written only through trusted (system) repositories.
+   */
+  const workerOnly = (what: string) => {
+    if (!options.system) throw new DomainError("FORBIDDEN", `${what} is worker-only (members cannot modify worker-controlled data)`);
+  };
 
   /** Only partial output of an unfinished run with no opportunities may be discarded. */
   const assertDiscardable = (runId: string) => {
@@ -67,7 +77,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
         parentRunId: input.parentRunId ?? null,
         opportunityId: input.opportunityId ?? null,
         runType: input.runType,
-        status: "DRAFT" as const,
+        status: (input.initialStatus ?? "DRAFT") as ResearchRun["status"],
         statusReason: null,
         degraded: false,
         stats: {},
@@ -92,7 +102,26 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .slice(options.offset ?? 0, (options.offset ?? 0) + (options.limit ?? 50));
     },
+    async requestCancellation(runId) {
+      const run = mine(db.runs.get(runId));
+      if (!run || !roleAtLeast(actor.role, "member")) throw new DomainError("FORBIDDEN", "research run not found");
+      if (isTerminalRunStatus(run.status)) return run.status;
+      let processing = 0;
+      for (const j of db.jobs.values()) {
+        if (j.organizationId !== org || j.researchRunId !== runId) continue;
+        if (j.status === "QUEUED" || j.status === "RETRYING") db.jobs.set(j.id, { ...j, status: "CANCELLED", completedAt: now() });
+        if (j.status === "PROCESSING") {
+          db.jobs.set(j.id, { ...j, cancelRequested: true });
+          processing++;
+        }
+      }
+      db.audit.push({ organizationId: org, actorId: actor.userId, action: "research.cancel_requested", entityType: "research_run", entityId: runId, metadata: { processing_jobs: processing }, createdAt: now() });
+      if (processing > 0) return "CANCELLING";
+      db.runs.set(runId, { ...run, status: "CANCELLED", statusReason: "ユーザーがキャンセルしました", progressPercent: 100, currentAction: "調査はキャンセルされました", completedAt: now() });
+      return "CANCELLED";
+    },
     async transitionRun(id, to, patch = {}) {
+      workerOnly("transitionRun");
       const run = mine(db.runs.get(id));
       if (!run) throw new DomainError("NOT_FOUND", "run not found");
       assertRunTransition(run.status, to);
@@ -115,6 +144,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
 
   const evidence: EvidenceRepository = {
     async insertSourceItems(items) {
+      workerOnly("insertSourceItems");
       const out = [];
       for (const item of items) {
         if (!mine(db.runs.get(item.researchRunId))) throw new DomainError("FORBIDDEN", "run not in organization");
@@ -135,6 +165,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
       return [...db.sourceItems.values()].filter((s) => s.organizationId === org && s.researchRunId === runId).map(strip);
     },
     async insertEvidence(items) {
+      workerOnly("insertEvidence");
       // Validate everything first: the batch is atomic like a single SQL INSERT.
       for (const e of items) {
         const source = mine(db.sourceItems.get(e.sourceItemId));
@@ -164,6 +195,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
 
   const signals: SignalRepository = {
     async insertSignals(rows: NewSignal[]) {
+      workerOnly("insertSignals");
       return rows.map((s) => {
         if (s.evidenceIds.length === 0) throw new DomainError("EVIDENCE_INTEGRITY", "a signal requires evidence");
         for (const id of s.evidenceIds) {
@@ -175,18 +207,21 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
       });
     },
     async discardRunSignals(runId) {
+      workerOnly("discardRunSignals");
       assertDiscardable(runId);
       const ids = [...db.signals.values()].filter((x) => x.organizationId === org && x.researchRunId === runId).map((x) => x.id);
       for (const id of ids) db.signals.delete(id);
       return ids.length;
     },
     async discardRunClusters(runId) {
+      workerOnly("discardRunClusters");
       assertDiscardable(runId);
       const ids = [...db.clusters.values()].filter((x) => x.organizationId === org && x.researchRunId === runId).map((x) => x.id);
       for (const id of ids) db.clusters.delete(id);
       return ids.length;
     },
     async setEmbeddings(rows) {
+      workerOnly("setEmbeddings");
       for (const r of rows) {
         const s = mine(db.signals.get(r.id));
         if (s) db.signals.set(r.id, { ...s, embedding: r.embedding, embeddingModel: r.model });
@@ -201,6 +236,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
         .map(strip);
     },
     async insertClusters(rows: NewCluster[]) {
+      workerOnly("insertClusters");
       return rows.map((c) => {
         const { centroid: _c, similarities: _s, ...rest } = c;
         void _c;
@@ -238,6 +274,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
 
   const opportunities: OpportunityRepository = {
     async createOpportunity({ researchRunId, clusterId, draft, confidence, scoreTotal, momentum }) {
+      workerOnly("createOpportunity");
       if (!mine(db.clusters.get(clusterId))) throw new DomainError("EVIDENCE_INTEGRITY", "unknown cluster");
       if (draft.evidenceIds.length === 0) throw new DomainError("EVIDENCE_INTEGRITY", "an opportunity requires evidence");
       if ([...db.opportunities.values()].some((o) => o.clusterId === clusterId)) {
@@ -282,6 +319,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
       return mine(db.opportunities.get(id)) ? (db.opportunityEvidence.get(id) ?? []) : [];
     },
     async saveScore(input) {
+      workerOnly("saveScore");
       const row = { ...input, id: newId(), organizationId: org, createdAt: now() };
       db.scores.set(row.id, row);
       return strip(row);
@@ -325,6 +363,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
         });
     },
     async linkEvidence(opportunityId, evidenceIds, sourceRunId) {
+      workerOnly("linkEvidence");
       if (!mine(db.opportunities.get(opportunityId))) throw new DomainError("NOT_FOUND", "opportunity not found");
       const current = new Set(db.opportunityEvidence.get(opportunityId) ?? []);
       let added = 0;
@@ -340,6 +379,8 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
       return added;
     },
     async updateAssessment(id, patch) {
+      // Members may write analysis summaries; system scores are worker-only (column grants).
+      if (patch.scoreTotal !== undefined || patch.confidence !== undefined) workerOnly("updateAssessment(score/confidence)");
       const opp = mine(db.opportunities.get(id));
       if (!opp) throw new DomainError("NOT_FOUND", "opportunity not found");
       const updated = { ...opp, ...patch, fieldProvenance: { ...opp.fieldProvenance, ...(patch.fieldProvenance ?? {}) }, updatedAt: now() };
@@ -412,6 +453,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
         .map(strip);
     },
     async recordConnectorRun(record) {
+      workerOnly("recordConnectorRun");
       db.connectorRuns.push({ ...record, organizationId: org });
     },
     async listRecentConnectorRuns(limit = 50) {
@@ -430,6 +472,9 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
     async spendSince(since) {
       const t = since.toISOString();
       return db.costs.filter((c) => c.organizationId === org && c.occurredAt >= t).reduce((n, c) => n + c.amountUsd, 0);
+    },
+    async listCostEntries(runId) {
+      return db.costs.filter((c) => c.organizationId === org && c.researchRunId === runId).map(strip);
     },
     async spendByRun(runId) {
       return db.costs.filter((c) => c.organizationId === org && c.researchRunId === runId).reduce((n, c) => n + c.amountUsd, 0);
@@ -452,6 +497,18 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
       const rest = (db.connectorSettings.get(org) ?? []).filter((s) => s.connectorKey !== input.connectorKey);
       rest.push({ connectorKey: input.connectorKey, enabled: input.enabled, complianceStatus: input.complianceStatus, termsNotes: input.termsNotes });
       db.connectorSettings.set(org, rest);
+    },
+    async getWorkerHealth() {
+      if (!db.platformOperators.has(actor.userId)) throw new DomainError("FORBIDDEN", "platform operator required");
+      const t = clock.now().getTime();
+      const ready = [...db.jobs.values()].filter((j) => j.organizationId === org && (j.status === "QUEUED" || j.status === "RETRYING") && Date.parse(j.availableAt) <= t);
+      const oldest = ready.length ? Math.min(...ready.map((j) => Date.parse(j.availableAt))) : null;
+      const workers = [...db.workers.values()].map((w) => {
+        const { currentJobId: _hidden, ...rest } = w; // never expose job ids (cross-tenant)
+        void _hidden;
+        return rest;
+      });
+      return { workers, oldestQueuedSeconds: oldest === null ? null : Math.round((t - oldest) / 1000), now: clock.now().toISOString() };
     },
     async consumeRateLimit(bucket, maxEvents, windowSeconds) {
       const key = `${actor.userId}:${bucket}`;

@@ -55,7 +55,8 @@ async function main() {
       }
       try {
         const stats = await store.stats();
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, busy: worker.busy, queue: stats }));
+        // Infrastructure endpoint (not exposed to app users): liveness + queue, no secrets.
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, worker: worker.snapshot(), queue: stats }));
       } catch (e) {
         res.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: (e as Error).message }));
       }

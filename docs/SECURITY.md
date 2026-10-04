@@ -43,3 +43,14 @@ All live in `private` (not exposed by PostgREST) except `create_organization` an
 - **Mock safety**: mock connectors only with `NODE_ENV != production` or `ENABLE_MOCK_CONNECTORS=true`; otherwise the process throws. MOCK data is labelled and a persistent banner is shown; missing credentials never fall back to mocks.
 - **Prompt injection**: see `src/domain/agent/prompt-boundary.ts`; suspicious content is flagged (`metadata.promptInjectionSuspected`) and still analysed only as data.
 - **Unresolved warnings** are listed in `docs/PRODUCTION_READINESS_AUDIT.md` (Supabase advisors not runnable without a hosted project; member update policy on `research_runs`; dev-only `braces` advisory).
+
+## Phase 6 additions
+
+- **Worker-controlled data:**
+  - Members cannot UPDATE `research_runs`. They can insert one only in a clean DRAFT/QUEUED state, created by themselves.
+  - Members cannot write source items, evidence, signals, clusters, opportunity–evidence links, connector runs, opportunity scores, or `opportunities.score_total` / `confidence` / `momentum` / `organization_id`. Column-level grant: they may change `status` and their own analysis summaries.
+  - Cancellation goes through `request_research_cancellation()`. Score reassessment is a worker job.
+- **Platform operators:** worker health is readable only by `private.platform_operators`. Organization owners are not operators, because every user owns a personal organization.
+- **`APP_ENV`:** explicit environment identity. Production never uses the demo store. Mocks need a flagged double opt-in there.
+- **Credential diagnostics:** statuses only, never values.
+- **Advisor lints:** run locally on every DB test run; ERROR-level findings fail CI. The hosted advisors are pending. See [SUPABASE_ADVISOR_REPORT.md](SUPABASE_ADVISOR_REPORT.md).

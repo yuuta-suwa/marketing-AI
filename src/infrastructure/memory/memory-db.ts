@@ -15,9 +15,11 @@ import type {
   StoredCompetitor,
   StoredMarketEstimate,
   StoredScore,
+  StoredQualityReview,
 } from "@/application/ports/repositories";
 import type { Experiment } from "@/domain/analysis/experiment";
 import type { Job } from "@/domain/jobs/job";
+import type { WorkerSnapshot } from "@/domain/ops/worker-health";
 import type { CostEntry } from "@/domain/cost/cost";
 import type { Evidence } from "@/domain/evidence/evidence";
 import type { Opportunity } from "@/domain/opportunity/opportunity";
@@ -65,6 +67,10 @@ export class MemoryDatabase {
   rateLimits = new Map<string, number[]>();
   feedback = new Map<string, Scoped<StoredFeedback>>();
   jobs = new Map<string, Job>();
+  /** Platform operators (worker health); not derived from organization roles. */
+  platformOperators = new Set<string>();
+  qualityReviews = new Map<string, Scoped<StoredQualityReview>>();
+  workers = new Map<string, WorkerSnapshot & { currentJobId: string | null }>();
   /** Membership directory for system contexts (worker re-checks access). */
   members = new Map<string, Map<string, "viewer" | "member" | "admin" | "owner">>();
 }

@@ -120,9 +120,9 @@ select tests.expect_count($$select count(*) from public.research_runs where id =
 reset role;
 
 -- ---------------------------------------------------------------------------
--- Idempotency guards for business data
+-- Idempotency guards for business data (written by the worker = service_role)
 -- ---------------------------------------------------------------------------
-select tests.login('00000000-0000-0000-0000-00000000000a');
+set role service_role;
 select tests.expect_error($$
   insert into public.evidence (organization_id, research_run_id, source_item_id, evidence_text, evidence_type, retrieved_at)
   select org_a, '20000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '空港からホテルまでの移動が分かりにくく', 'QUOTE', now() from ids

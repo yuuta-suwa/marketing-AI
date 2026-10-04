@@ -1,7 +1,7 @@
 import { AgentRunner } from "@/application/agent-runner";
 import { createBudgetTracker } from "@/application/budget";
 import type { AppContext } from "@/application/context";
-import { reassessOpportunity } from "@/application/opportunity/reassess";
+import { requestReassessment } from "@/application/opportunity/reassess";
 import type { StoredCompetitor } from "@/application/ports/repositories";
 import { COMPETITOR_ANALYST, analyzeCompetitorsHeuristically, analyzeCompetitorsWithLLM, type CompetitorFinding } from "@/agents/competitor-analyst";
 import { authorize } from "@/domain/auth/authorization";
@@ -87,6 +87,6 @@ export async function addManualCompetitor(
     sourceEvidenceIds: input.evidenceId ? [input.evidenceId] : [],
   });
   await ctx.repos.ops.audit("analysis.competitor_added", "opportunity", opportunityId, { name: input.name });
-  await reassessOpportunity(ctx, opportunityId, "competitor added");
+  await requestReassessment(ctx, opportunityId, "competitor added");
   return row;
 }

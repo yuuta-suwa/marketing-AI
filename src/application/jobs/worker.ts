@@ -1,6 +1,7 @@
 import type { AppContext } from "@/application/context";
 import { backoffSeconds, isRetryableError, JobError, type EnqueueJobInput, type Job, type JobType } from "@/domain/jobs/job";
 import type { Logger } from "@/lib/logger";
+import type { WorkerSnapshot } from "@/domain/ops/worker-health";
 import type { JobStore } from "./ports";
 
 export type JobHandlerArgs = {
@@ -30,6 +31,11 @@ export type WorkerOptions = {
   /** Max jobs claimed per poll. Each runs sequentially (bounded resource use). */
   batchSize: number;
   jobTypes?: readonly JobType[];
+  /** Release identifier published in worker health. */
+  version?: string;
+  appEnv?: string;
+  /** Credential statuses (names → CONFIGURED/MISSING/…); never values. */
+  diagnostics?: () => Record<string, string>;
   backoff?: { baseSeconds: number; maxSeconds: number; random?: () => number };
 };
 
@@ -62,6 +68,10 @@ export class JobWorker {
   private stopping = false;
   private current: Job | null = null;
   private wake: (() => void) | null = null;
+  private readonly startedAt = new Date();
+  private processedCount = 0;
+  private failedCount = 0;
+  private lastPublished = 0;
 
   constructor(
     private readonly deps: {
@@ -76,6 +86,35 @@ export class JobWorker {
 
   get busy(): boolean {
     return this.current !== null;
+  }
+
+  /** Liveness snapshot (worker_heartbeats row / /healthz). */
+  snapshot(): WorkerSnapshot & { currentJobId: string | null } {
+    const o = this.deps.options;
+    return {
+      workerId: o.workerId,
+      startedAt: this.startedAt.toISOString(),
+      lastHeartbeatAt: new Date().toISOString(),
+      jobsProcessed: this.processedCount,
+      jobsFailed: this.failedCount,
+      currentJobId: this.current?.id ?? null,
+      currentJobType: this.current?.jobType ?? null,
+      busy: this.current !== null,
+      version: o.version ?? "dev",
+      appEnv: o.appEnv ?? "local",
+      diagnostics: o.diagnostics?.() ?? {},
+    };
+  }
+
+  /** Publishes liveness; failures are logged, never fatal. */
+  async publishHealth(force = false): Promise<void> {
+    if (!force && Date.now() - this.lastPublished < this.deps.options.heartbeatMs) return;
+    this.lastPublished = Date.now();
+    try {
+      await this.deps.store.reportWorker(this.snapshot());
+    } catch (e) {
+      this.deps.logger.warn("worker.health_publish_failed", { error: (e as Error).message });
+    }
   }
 
   /** Claims and processes up to batchSize jobs. Returns how many were processed. */
@@ -110,7 +149,9 @@ export class JobWorker {
     options.signal?.addEventListener("abort", () => this.stop());
     logger.info("worker.started", { worker_id: this.deps.options.workerId, provider: this.deps.store.provider });
     let consecutiveErrors = 0;
+    await this.publishHealth(true);
     while (!this.stopping) {
+      await this.publishHealth();
       let processed = 0;
       try {
         processed = await this.runOnce();
@@ -132,7 +173,8 @@ export class JobWorker {
         this.wake = null;
       }
     }
-    logger.info("worker.stopped", { worker_id: this.deps.options.workerId });
+    await this.publishHealth(true);
+    logger.info("worker.stopped", { worker_id: this.deps.options.workerId, jobs_processed: this.processedCount, jobs_failed: this.failedCount });
   }
 
   /** Graceful shutdown: finish nothing new; the running job ends at its next checkpoint or completes. */
@@ -152,7 +194,9 @@ export class JobWorker {
       worker_id: options.workerId,
     });
     this.current = job;
+    await this.publishHealth(true);
     const started = Date.now();
+    let failed = false;
     let lost = false;
     let ctx: AppContext | null = null;
 
@@ -189,6 +233,7 @@ export class JobWorker {
       const ok = await store.complete(job.id, options.workerId, result ?? undefined);
       log.info(ok ? "job.completed" : "job.complete_ignored_lost_lease", { status: "COMPLETED", duration_ms: Date.now() - started });
     } catch (e) {
+      failed = true;
       const message = e instanceof Error ? e.message : String(e);
       if (e instanceof JobLostError || lost) {
         // Either another worker owns it now (no-op) or a cancel was requested (→ CANCELLED).
@@ -215,7 +260,10 @@ export class JobWorker {
       }
     } finally {
       clearInterval(timer);
+      this.processedCount++;
+      if (failed) this.failedCount++;
       this.current = null;
+      await this.publishHealth(true);
     }
   }
 }

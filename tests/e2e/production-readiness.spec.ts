@@ -34,3 +34,23 @@ test("Phase 5: connector status shows mode, readiness, usage; health endpoint re
   await page.goto("/settings/observability");
   await expect(page.getByTestId("job-list")).toBeVisible();
 });
+
+test("Phase 6: a member records a human quality review (system never fills it)", async ({ page, request }) => {
+  await page.goto("/research/new");
+  await page.getByLabel("何を調べたいですか？").fill("日本の旅行市場で、旅行者の不満から事業機会を調べる");
+  await page.getByRole("button", { name: "調査を開始" }).click();
+  await expect(page.getByTestId("run-status")).toHaveAttribute("data-status", /COMPLETED|PARTIAL_SUCCESS/, { timeout: 30_000 });
+  const review = page.getByTestId("quality-review");
+  await expect(review).toBeVisible();
+  const first = review.locator("form").first();
+  await expect(first.getByLabel("Human rating")).toHaveValue(""); // empty until a human rates it
+  await first.getByLabel("Human rating").selectOption("4");
+  await first.getByLabel("Human decision").selectOption("DEEP_DIVE");
+  await first.getByRole("button", { name: "保存" }).click();
+  await expect(page.getByText("評価を保存しました")).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId("quality-review").locator("form").first().getByLabel("Human rating")).toHaveValue("4");
+
+  const health = await (await request.get("/api/health")).json();
+  expect(health).toMatchObject({ appEnv: "staging", productionMockOverride: false });
+});
