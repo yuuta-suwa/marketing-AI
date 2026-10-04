@@ -378,4 +378,25 @@ select tests.expect_count('select count(*) from public.feedback_events', 0, 'bob
 select tests.expect_count('select count(*) from public.watchlists', 0, 'bob cannot see alice watchlists');
 reset role;
 
+
+-- ---------------------------------------------------------------------------
+-- Release hardening: rate limit, integrity report, batch embeddings
+-- ---------------------------------------------------------------------------
+select tests.login('00000000-0000-0000-0000-00000000000a');
+select tests.expect_count($$select count(*) from (select public.consume_rate_limit('research.start', 2, 60)) x$$, 1, 'rate limit call 1');
+select tests.expect_count($$select count(*) from (select 1 where public.consume_rate_limit('research.start', 2, 60)) x$$, 1, 'rate limit allows within limit');
+select tests.expect_count($$select count(*) from (select 1 where public.consume_rate_limit('research.start', 2, 60)) x$$, 0, 'rate limit blocks over limit');
+select tests.expect_error($$select count(*) from private.rate_limit_events$$, 'rate limit table is not directly readable');
+select tests.expect_count($$select coalesce(sum(violations), 0)::bigint from public.integrity_report() where check_name <> 'clusters_without_signals'$$, 0,
+  'integrity report: no orphan signals/opportunities, verbatim evidence, no duplicate items');
+select tests.expect_count($$select public.set_signal_embeddings((select org_a from ids),
+  jsonb_build_array(jsonb_build_object('id', '50000000-0000-0000-0000-000000000001', 'embedding', '[' || array_to_string(array_fill(0.01::float8, array[1536]), ',') || ']', 'model', 'test')))::bigint$$, 1,
+  'batch embedding update writes vectors');
+reset role;
+select tests.login('00000000-0000-0000-0000-00000000000b');
+select tests.expect_count($$select public.set_signal_embeddings((select org_a from ids),
+  jsonb_build_array(jsonb_build_object('id', '50000000-0000-0000-0000-000000000001', 'embedding', '[' || array_to_string(array_fill(0.02::float8, array[1536]), ',') || ']', 'model', 'x')))::bigint$$, 0,
+  'batch embedding update cannot touch another tenant');
+reset role;
+
 \echo 'ALL DATABASE TESTS PASSED'

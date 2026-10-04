@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-10-03 · Milestone 4 complete.
+Last updated: 2026-10-03 · v0.1.0 released (all milestones + Final QA).
 
 ## Repository audit (start of M1)
 
@@ -18,7 +18,7 @@ The repository was empty (no commits, no files). Everything below was built from
 | 6 | FRIDAY adapter, advisor council, decision gate | ✅ command center, decision memory, council, CEO approval gate |
 | 7 | Watchlist, daily brief, automation, cost control | ✅ watchlists + scheduled monitoring, meaningful-change notifications, daily brief, cron |
 | 8 | PoC spec, Claude Code export, feedback loop | ✅ spec, gated export, feedback events + lineage dataset |
-| 9 | Testing, security audit, performance, release | 🟡 test suites in place for all built features |
+| 9 | Testing, security audit, performance, release | ✅ rate limits, pagination, batching, indexes, integrity report, multi-viewport E2E, release notes |
 
 ## MVP acceptance criteria
 
@@ -53,6 +53,5 @@ The repository was empty (no commits, no files). Everything below was built from
 - Pipeline runs in-process via `after()`; long runs depend on platform max duration (queue worker in M3).
 - Default local hash embeddings are lexical; set `EMBEDDING_PROVIDER=openai` for semantic clustering.
 - Market size and CFO numbers come only from user/evidence inputs or labelled default assumptions — they are only as good as those inputs.
-- No per-user rate limiter for server actions yet (budget bounds expensive work).
 - OpenAI / Gemini adapters not implemented (port ready).
 - X deletion-sync not implemented (connector is PENDING_REVIEW by default).

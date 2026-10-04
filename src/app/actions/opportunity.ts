@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { enforceRateLimit } from "@/application/rate-limit";
 import { LocalFridayAdapter } from "@/application/executive/local-friday";
 import { ADDITIONAL_RESEARCH_TYPES, startAdditionalResearch } from "@/application/opportunity/additional-research";
 import { decideOpportunity } from "@/application/opportunity/decide";
@@ -18,6 +19,7 @@ export async function redTeamAction(_prev: ActionState, formData: FormData): Pro
   try {
     const id = IdSchema.parse(formData.get("opportunityId"));
     const ctx = buildAppContext(await requireSession());
+    await enforceRateLimit(ctx, "analysis.run");
     const review = await runRedTeam(ctx, id);
     revalidatePath(`/opportunities/${id}`);
     return { ok: true, message: `Red Team完了: ${review.verdict}` };
@@ -57,6 +59,7 @@ export async function additionalResearchAction(_prev: ActionState, formData: For
     const type = z.enum(ADDITIONAL_RESEARCH_TYPES).parse(formData.get("type"));
     const manual = String(formData.get("manual") ?? "");
     const ctx = buildAppContext(await requireSession());
+    await enforceRateLimit(ctx, "research.additional");
     const result = await startAdditionalResearch(ctx, {
       opportunityId,
       type,
@@ -75,7 +78,9 @@ export type FridayState = ActionState & { briefing?: Awaited<ReturnType<LocalFri
 export async function fridayConsultAction(_prev: FridayState, formData: FormData): Promise<FridayState> {
   try {
     const id = IdSchema.parse(formData.get("opportunityId"));
-    const friday = new LocalFridayAdapter(buildAppContext(await requireSession()));
+    const ctx = buildAppContext(await requireSession());
+    await enforceRateLimit(ctx, "friday.command");
+    const friday = new LocalFridayAdapter(ctx);
     return { ok: true, message: "", briefing: await friday.consult(id) };
   } catch (e) {
     return toActionError(e);

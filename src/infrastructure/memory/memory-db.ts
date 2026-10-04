@@ -61,5 +61,6 @@ export class MemoryDatabase {
   reports = new Map<string, Scoped<StoredReport>>();
   watchlists = new Map<string, StoredWatchlist>();
   notifications = new Map<string, Scoped<StoredNotification> & { dedupeKey?: string }>();
+  rateLimits = new Map<string, number[]>();
   feedback = new Map<string, Scoped<StoredFeedback>>();
 }

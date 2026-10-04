@@ -3,6 +3,7 @@
 import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { enforceRateLimit } from "@/application/rate-limit";
 import { createResearch, toManualItems } from "@/application/research/create-research";
 import { csvToManualItems } from "@/application/research/csv-import";
 import { parseManualInput } from "@/application/research/manual-input";
@@ -41,7 +42,9 @@ export async function startResearchAction(_prev: ActionState, formData: FormData
   try {
     const session = await requireSession();
     const ctx = buildAppContext(session);
+    await enforceRateLimit(ctx, "research.start");
     const manual = await readManualInputs(formData);
+    if (manual.urls.length > 0) await enforceRateLimit(ctx, "url.import");
     const country = String(formData.get("country") ?? "");
     const language = String(formData.get("language") ?? "");
     const request = ResearchRequestSchema.parse({

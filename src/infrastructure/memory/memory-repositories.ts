@@ -76,7 +76,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
       return [...db.runs.values()]
         .filter((r) => r.organizationId === org && (!options.opportunityId || r.opportunityId === options.opportunityId))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .slice(0, options.limit ?? 50);
+        .slice(options.offset ?? 0, (options.offset ?? 0) + (options.limit ?? 50));
     },
     async transitionRun(id, to, patch = {}) {
       const run = mine(db.runs.get(id));
@@ -158,7 +158,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
       return [...db.signals.values()]
         .filter((s) => s.organizationId === org && (!filter.runId || s.researchRunId === filter.runId) && (!ids || ids.has(s.id)))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .slice(0, filter.limit ?? 1000)
+        .slice(filter.offset ?? 0, (filter.offset ?? 0) + (filter.limit ?? 1000))
         .map(strip);
     },
     async insertClusters(rows: NewCluster[]) {
@@ -233,7 +233,7 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
             (!filter.status || o.status === filter.status),
         )
         .sort((a, b) => (b.scoreTotal ?? 0) - (a.scoreTotal ?? 0))
-        .slice(0, filter.limit ?? 100);
+        .slice(filter.offset ?? 0, (filter.offset ?? 0) + (filter.limit ?? 100));
     },
     async listOpportunityEvidenceIds(id) {
       return mine(db.opportunities.get(id)) ? (db.opportunityEvidence.get(id) ?? []) : [];
@@ -409,6 +409,17 @@ export function createMemoryRepositories(db: MemoryDatabase, actor: Actor, clock
       const rest = (db.connectorSettings.get(org) ?? []).filter((s) => s.connectorKey !== input.connectorKey);
       rest.push({ connectorKey: input.connectorKey, enabled: input.enabled, complianceStatus: input.complianceStatus, termsNotes: input.termsNotes });
       db.connectorSettings.set(org, rest);
+    },
+    async consumeRateLimit(bucket, maxEvents, windowSeconds) {
+      const key = `${actor.userId}:${bucket}`;
+      const t = clock.now().getTime();
+      const recent = (db.rateLimits.get(key) ?? []).filter((x) => x > t - windowSeconds * 1000);
+      if (recent.length >= maxEvents) {
+        db.rateLimits.set(key, recent);
+        return false;
+      }
+      db.rateLimits.set(key, [...recent, t]);
+      return true;
     },
     async audit(action, entityType, entityId, metadata) {
       db.audit.push({ organizationId: org, actorId: actor.userId, action, entityType, entityId, metadata, createdAt: now() });

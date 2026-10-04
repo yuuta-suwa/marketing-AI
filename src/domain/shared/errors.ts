@@ -6,7 +6,8 @@ export type DomainErrorCode =
   | "COMPLIANCE_BLOCKED"
   | "FORBIDDEN"
   | "NOT_FOUND"
-  | "CONFLICT";
+  | "CONFLICT"
+  | "RATE_LIMITED";
 
 export class DomainError extends Error {
   readonly code: DomainErrorCode;

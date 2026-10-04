@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { enforceRateLimit } from "@/application/rate-limit";
 import { compareOpportunityBusinessModels, runCfoAnalysis } from "@/application/analysis/business-model";
 import { addManualCompetitor, analyzeCompetitors } from "@/application/analysis/competitors";
 import { advanceExperiment, createExperiment } from "@/application/analysis/experiments";
@@ -16,7 +17,12 @@ import { buildAppContext, requireSession } from "@/infrastructure/server-context
 import { toActionError, type ActionState } from "./result";
 
 const Id = z.uuid();
-const ctxOf = async () => buildAppContext(await requireSession());
+/** Session context with the per-user analysis rate limit applied. */
+const ctxOf = async () => {
+  const ctx = buildAppContext(await requireSession());
+  await enforceRateLimit(ctx, "analysis.run");
+  return ctx;
+};
 const str = (f: FormData, k: string) => {
   const v = f.get(k);
   return typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;

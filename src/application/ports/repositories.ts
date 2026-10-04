@@ -42,7 +42,7 @@ export interface ResearchRepository {
     opportunityId?: string;
   }): Promise<ResearchRun>;
   getRun(id: string): Promise<ResearchRun | null>;
-  listRuns(options?: { limit?: number; opportunityId?: string }): Promise<ResearchRun[]>;
+  listRuns(options?: { limit?: number; offset?: number; opportunityId?: string }): Promise<ResearchRun[]>;
   transitionRun(
     id: string,
     to: ResearchRunStatus,
@@ -93,7 +93,7 @@ export type NewCluster = Omit<StoredCluster, "id" | "createdAt"> & {
 export interface SignalRepository {
   insertSignals(signals: NewSignal[]): Promise<StoredSignal[]>;
   setEmbeddings(rows: Array<{ id: string; embedding: number[]; model: string }>): Promise<void>;
-  listSignals(filter: { runId?: string; ids?: string[]; limit?: number }): Promise<StoredSignal[]>;
+  listSignals(filter: { runId?: string; ids?: string[]; limit?: number; offset?: number }): Promise<StoredSignal[]>;
   insertClusters(clusters: NewCluster[]): Promise<StoredCluster[]>;
   listClusters(filter: { runId?: string; limit?: number }): Promise<StoredCluster[]>;
   /** Signals created since a time, optionally matching text/country (monitoring). */
@@ -147,7 +147,7 @@ export interface OpportunityRepository {
     momentum: number;
   }): Promise<Opportunity>;
   getOpportunity(id: string): Promise<Opportunity | null>;
-  listOpportunities(filter?: { runId?: string; limit?: number; status?: OpportunityStatus }): Promise<Opportunity[]>;
+  listOpportunities(filter?: { runId?: string; limit?: number; offset?: number; status?: OpportunityStatus }): Promise<Opportunity[]>;
   listOpportunityEvidenceIds(opportunityId: string): Promise<string[]>;
   saveScore(input: Omit<StoredScore, "id" | "createdAt">): Promise<StoredScore>;
   latestScore(opportunityId: string): Promise<StoredScore | null>;
@@ -240,6 +240,8 @@ export interface OpsRepository {
   /** Admin: enable/disable a connector or make its compliance status stricter. */
   upsertConnectorSetting(input: ConnectorSetting & { displayName: string; termsNotes?: string }): Promise<void>;
   audit(action: string, entityType: string, entityId?: string, metadata?: Record<string, unknown>): Promise<void>;
+  /** Sliding-window per-user limiter; false when the limit is reached. */
+  consumeRateLimit(bucket: string, maxEvents: number, windowSeconds: number): Promise<boolean>;
 }
 
 export type StoredCompetitor = {

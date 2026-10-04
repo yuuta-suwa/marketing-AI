@@ -10,6 +10,7 @@ Supabase PostgreSQL 15+ with `pgvector`. Migrations: `supabase/migrations/`.
 | `20261003000400_security.sql` | grants, RLS policies, security-definer entry points, signup bootstrap, system defaults |
 | `20261003000500_m1_compliance_audit.sql` | compliance vocabulary (`RESTRICTED`, `DISABLED`), connector terms notes |
 | `20261003000600_m2_research_engine.sql` | `signals.field_provenance`, `connector_runs.cost_usd` |
+| `20261003000900_release_hardening.sql` | per-user rate limiter (`consume_rate_limit`), `integrity_report()`, batched `set_signal_embeddings(org, rows)`, hot-path indexes |
 | `20261003000800_m4_executive_os.sql` | decision memory (`subject`, `source`), CEO gate (PoC approval/launch need an admin/owner decision), watchlist target validation + dedupe, MARKET target, notification dedupe/severity + self-insert policy, `feedback_events`, `opportunity_lineage` view (security_invoker) |
 | `20261003000700_m3_opportunity_engine.sql` | experiment fields + state machine trigger + human attribution, `opportunity_evidence.source_run_id`, business model rationale, one primary model per opportunity, members may regenerate competitor/business-model analyses |
 

@@ -41,7 +41,7 @@ export default async function ConnectorsPage() {
               <p className="mt-2 text-xs text-muted">{c.profile.notes}</p>
               {c.env.length > 0 ? (
                 <ul className="mt-2 space-y-0.5 text-[11px] text-muted">
-                  {c.env.map((e) => <li key={e.name}><code className="font-mono">{e.name}</code>{e.secret ? " (secret)" : ""} — {e.description}</li>)}
+                  {c.env.map((e) => <li key={e.name}><code className="break-all font-mono">{e.name}</code>{e.secret ? " (secret)" : ""} — {e.description}</li>)}
                 </ul>
               ) : null}
               {c.profile.termsUrl ? <a href={c.profile.termsUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-[11px] underline">利用規約</a> : null}

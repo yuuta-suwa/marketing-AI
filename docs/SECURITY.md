@@ -16,6 +16,8 @@
 | Append-only logs | `cost_ledger`, `connector_runs`, `opportunity_scores`, `red_team_reviews` have no update/delete policies | DB tests |
 | Input validation | Zod on every server action, directive, connector output and AI output | unit tests |
 | Unauthorized API access | every page/action re-resolves the session server-side; proxy is only an optimistic redirect | E2E 404 test |
+| Data integrity | `public.integrity_report()` (orphan signals/opportunities, non-verbatim evidence, empty clusters, duplicate items) — all zero in tests | `npm run test:db` |
+| Filter injection | user text in PostgREST `.or()` is stripped of grammar characters and quoted | code review |
 | Error leakage | actions return generic messages for internal errors; details logged as JSON | `actions/result.ts` |
 | Headers | `X-Frame-Options: DENY`, nosniff, HSTS, Referrer-Policy, Permissions-Policy, `frame-ancestors 'none'`, no `X-Powered-By` | E2E |
 | Open redirect | auth callback accepts only same-origin relative paths | code |
@@ -24,7 +26,7 @@
 
 - Supabase Auth enforces its own auth rate limits.
 - Research cost is bounded per run/day/month by the budget (a natural limiter for expensive work).
-- Per-user rate limiting for expensive server actions: see Final QA (RELEASE notes).
+- Per-user rate limiting (`public.consume_rate_limit`, atomic per user+bucket with an advisory lock; in-memory equivalent in demo) on research start, additional research, FRIDAY commands, analyses, report generation and URL import (`src/application/rate-limit.ts`).
 
 ## Security-definer functions
 

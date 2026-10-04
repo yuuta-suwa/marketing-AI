@@ -4,6 +4,7 @@ import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { enforceRateLimit, type RateLimitBucket } from "@/application/rate-limit";
 import { openAdvisorCouncil } from "@/application/executive/council";
 import { recordFeedback } from "@/application/executive/feedback";
 import { handleFridayCommand } from "@/application/executive/friday-command";
@@ -15,7 +16,11 @@ import { buildAppContext, requireSession } from "@/infrastructure/server-context
 import { toActionError, type ActionState } from "./result";
 
 const Id = z.uuid();
-const ctxOf = async () => buildAppContext(await requireSession());
+const ctxOf = async (bucket?: RateLimitBucket) => {
+  const ctx = buildAppContext(await requireSession());
+  if (bucket) await enforceRateLimit(ctx, bucket);
+  return ctx;
+};
 
 export type FridayChatState = ActionState & { reply?: { intent: string; message: string; link?: { href: string; label: string } }; echo?: string };
 
@@ -24,7 +29,7 @@ export async function fridayCommandAction(_p: FridayChatState, f: FormData): Pro
   try {
     if (!text) return { ok: false, message: "コマンドを入力してください" };
     const opportunityId = f.get("opportunityId") ? Id.parse(f.get("opportunityId")) : undefined;
-    const reply = await handleFridayCommand(await ctxOf(), { text, opportunityId });
+    const reply = await handleFridayCommand(await ctxOf("friday.command"), { text, opportunityId });
     if (reply.background) after(reply.background);
     revalidatePath("/friday");
     return { ok: true, message: "", echo: text, reply: { intent: reply.intent, message: reply.message, link: reply.link } };
@@ -36,7 +41,7 @@ export async function fridayCommandAction(_p: FridayChatState, f: FormData): Pro
 export async function councilAction(_p: ActionState, f: FormData): Promise<ActionState> {
   try {
     const id = Id.parse(f.get("opportunityId"));
-    const s = await openAdvisorCouncil(await ctxOf(), id);
+    const s = await openAdvisorCouncil(await ctxOf("analysis.run"), id);
     revalidatePath("/friday");
     revalidatePath(`/opportunities/${id}`);
     return { ok: true, message: `顧問会議: ${s.consensus}` };
@@ -50,7 +55,7 @@ export async function pocSpecAction(_p: ActionState, f: FormData): Promise<Actio
   try {
     const id = Id.parse(f.get("opportunityId"));
     const kind = f.get("kind") === "export" ? "export" : "spec";
-    const ctx = await ctxOf();
+    const ctx = await ctxOf("report.generate");
     reportId = (kind === "export" ? await exportClaudeCodePrompt(ctx, id) : await generatePocSpecReport(ctx, id)).id;
   } catch (e) {
     return toActionError(e);
@@ -76,7 +81,7 @@ export async function watchAction(_p: ActionState, f: FormData): Promise<ActionS
 
 export async function checkNowAction(): Promise<ActionState> {
   try {
-    const ctx = await ctxOf();
+    const ctx = await ctxOf("analysis.run");
     const r = await checkWatchlists(ctx);
     const brief = await publishDailyBrief(ctx);
     revalidatePath("/watchlists");

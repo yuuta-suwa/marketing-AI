@@ -18,7 +18,14 @@ export default defineConfig({
     trace: "retain-on-failure",
     launchOptions: process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : undefined,
   },
-  projects: [{ name: "mobile-chromium", use: { ...devices["Pixel 7"] } }],
+  projects: [
+    // Full scenarios on Android-sized Chromium.
+    { name: "mobile-chromium", use: { ...devices["Pixel 7"] }, testIgnore: /smoke\.spec\.ts/ },
+    // Layout smoke on iPhone and desktop viewports (Chromium engine with device metrics).
+    { name: "iphone", use: { ...devices["iPhone 14"], browserName: "chromium" }, testMatch: /smoke\.spec\.ts/ },
+    { name: "android", use: { ...devices["Pixel 7"] }, testMatch: /smoke\.spec\.ts/ },
+    { name: "desktop", use: { ...devices["Desktop Chrome"] }, testMatch: /smoke\.spec\.ts/ },
+  ],
   webServer: {
     command: `npx next start -p ${PORT}`,
     url: `http://127.0.0.1:${PORT}/login`,

@@ -4,10 +4,10 @@
 **証拠付きの事業機会** に変換する AI 市場インテリジェンス OS。
 
 ```
-SOURCE → EVIDENCE → SIGNAL → CLUSTER → OPPORTUNITY → (BUSINESS MODEL → MARKET VALIDATION → CFO)
-       → RED TEAM → FRIDAY → (ADVISOR COUNCIL) → HUMAN DECISION → (EXPERIMENT → PoC → CLAUDE CODE BUILD)
+SOURCE → EVIDENCE → SIGNAL → CLUSTER → OPPORTUNITY → BUSINESS MODEL → MARKET VALIDATION → CFO
+       → RED TEAM → FRIDAY → ADVISOR COUNCIL → HUMAN DECISION → EXPERIMENT → PoC → CLAUDE CODE BUILD
 ```
-括弧内は後続マイルストーン。現在の実装状況は [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)。
+v0.1.0 で全工程（競合・市場規模・CFO・顧問会議・PoC・Claude Code Export を含む）を実装済み。詳細は [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)。
 
 ## 原則
 
@@ -26,8 +26,8 @@ Security by Design · Cost Awareness · No Hallucinated Market Facts · Traceabi
 npm ci
 cp .env.example .env.local
 
-# A) ローカルデモ（Supabase なし・本番利用不可）
-echo "MRO_DEMO_MODE=true" >> .env.local
+# A) ローカルデモ（Supabase なし・本番利用不可、モックConnector付き）
+printf "MRO_DEMO_MODE=true\nCONNECTOR_MOCK_MODE=true\n" >> .env.local
 npm run dev            # http://localhost:3000
 
 # B) Supabase
@@ -52,4 +52,4 @@ npm run dev            # http://localhost:3000
 [ARCHITECTURE](docs/ARCHITECTURE.md) · [DATABASE](docs/DATABASE.md) · [DOMAIN_MODEL](docs/DOMAIN_MODEL.md) ·
 [AGENTS](docs/AGENTS.md) · [CONNECTORS](docs/CONNECTORS.md) · [COMPLIANCE](docs/COMPLIANCE.md) ·
 [SECURITY](docs/SECURITY.md) · [FRIDAY_INTEGRATION](docs/FRIDAY_INTEGRATION.md) · [DEPLOYMENT](docs/DEPLOYMENT.md) ·
-[TESTING](docs/TESTING.md) · [IMPLEMENTATION_STATUS](docs/IMPLEMENTATION_STATUS.md) · [HANDOFF_M1](docs/HANDOFF_M1.md)
+[TESTING](docs/TESTING.md) · [IMPLEMENTATION_STATUS](docs/IMPLEMENTATION_STATUS.md) · Handoffs [M1](docs/HANDOFF_M1.md) [M2](docs/HANDOFF_M2.md) [M3](docs/HANDOFF_M3.md) [M4](docs/HANDOFF_M4.md) · [RELEASE v0.1.0](docs/RELEASE_v0.1.0.md)

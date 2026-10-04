@@ -1,16 +1,20 @@
 import { ConfidenceBadge, Tag } from "@/components/badges";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { SIGNAL_TYPE_LABEL_JA } from "@/domain/signal/signal";
+import { PAGE_SIZE, Pagination, pageFrom } from "@/components/pagination";
 import { pageContext } from "@/lib/page-context";
 
 export const metadata = { title: "Signals" };
 
-export default async function SignalsPage() {
+export default async function SignalsPage({ searchParams }: PageProps<"/signals">) {
   const ctx = await pageContext();
-  const signals = await ctx.repos.signals.listSignals({ limit: 200 });
+  const page = pageFrom((await searchParams).page);
+  const fetched = await ctx.repos.signals.listSignals({ limit: PAGE_SIZE + 1, offset: (page - 1) * PAGE_SIZE });
+  const hasNext = fetched.length > PAGE_SIZE;
+  const signals = fetched.slice(0, PAGE_SIZE);
   return (
     <>
-      <PageHeader title="Market Signals" subtitle={`${signals.length}件（最新200件）`} />
+      <PageHeader title="Market Signals" subtitle="新しい順" />
       {signals.length === 0 ? <EmptyState>シグナルはまだありません</EmptyState> : (
         <ul className="space-y-2">
           {signals.map((s) => (
@@ -22,6 +26,7 @@ export default async function SignalsPage() {
           ))}
         </ul>
       )}
+    <Pagination basePath="/signals" page={page} hasNext={hasNext} />
     </>
   );
 }

@@ -116,7 +116,8 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
       return res.data ? mapRun(res.data) : null;
     },
     async listRuns(options = {}) {
-      let q = db.from("research_runs").select().eq("organization_id", org).order("created_at", { ascending: false }).limit(options.limit ?? 50);
+      const from = options.offset ?? 0;
+      let q = db.from("research_runs").select().eq("organization_id", org).order("created_at", { ascending: false }).range(from, from + (options.limit ?? 50) - 1);
       if (options.opportunityId) q = q.eq("opportunity_id", options.opportunityId);
       return must(await q, "list runs").map(mapRun);
     },
@@ -246,15 +247,16 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
       return signals.listSignals({ ids: inserted.map((r) => r.id) });
     },
     async setEmbeddings(rows) {
-      for (const r of rows) {
-        must(
-          await db.from("signals").update({ embedding: toVectorLiteral(r.embedding), embedding_model: r.model }).eq("organization_id", org).eq("id", r.id).select("id").single(),
-          "set embedding",
-        );
+      // One round trip per 200 rows (RPC is security invoker → RLS applies).
+      for (let i = 0; i < rows.length; i += 200) {
+        const batch = rows.slice(i, i + 200).map((r) => ({ id: r.id, embedding: toVectorLiteral(r.embedding), model: r.model }));
+        const res = await db.rpc("set_signal_embeddings", { org, rows: batch });
+        if (res.error) throw new Error(`set embeddings: ${res.error.message}`);
       }
     },
     async listSignals(filter) {
-      let q = db.from("signals").select(SIGNAL_SELECT).eq("organization_id", org).order("created_at", { ascending: false }).limit(filter.limit ?? 1000);
+      const from = filter.offset ?? 0;
+      let q = db.from("signals").select(SIGNAL_SELECT).eq("organization_id", org).order("created_at", { ascending: false }).range(from, from + (filter.limit ?? 1000) - 1);
       if (filter.runId) q = q.eq("research_run_id", filter.runId);
       if (filter.ids) {
         if (filter.ids.length === 0) return [];
@@ -263,12 +265,13 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
       return must(await q, "list signals").map(mapSignal);
     },
     async insertClusters(rows) {
-      const out = [];
-      for (const c of rows) {
-        const row = must(
-          await db
-            .from("signal_clusters")
-            .insert({
+      if (rows.length === 0) return [];
+      // Batched: one insert for clusters (returned in insert order), one for memberships.
+      const inserted = must(
+        await db
+          .from("signal_clusters")
+          .insert(
+            rows.map((c) => ({
               organization_id: org,
               research_run_id: c.researchRunId,
               name: c.name,
@@ -285,22 +288,20 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
               confidence: c.confidence,
               centroid: c.centroid && c.centroid.length > 0 ? toVectorLiteral(c.centroid) : null,
               naming_method: c.namingMethod,
-            })
-            .select("id")
-            .single(),
-          "insert cluster",
-        ) as { id: string };
-        must(
-          await db
-            .from("cluster_signals")
-            .insert(c.signalIds.map((signalId) => ({ cluster_id: row.id, signal_id: signalId, organization_id: org, similarity: c.similarities[signalId] ?? null })))
-            .select("signal_id"),
-          "link cluster signals",
-        );
-        const cluster = await signals.getCluster(row.id);
-        if (cluster) out.push(cluster);
-      }
-      return out;
+            })),
+          )
+          .select("id"),
+        "insert clusters",
+      ) as Array<{ id: string }>;
+      if (inserted.length !== rows.length) throw new Error("insert clusters: row count mismatch");
+      const links = inserted.flatMap((row, i) =>
+        rows[i].signalIds.map((signalId) => ({ cluster_id: row.id, signal_id: signalId, organization_id: org, similarity: rows[i].similarities[signalId] ?? null })),
+      );
+      if (links.length > 0) must(await db.from("cluster_signals").insert(links).select("signal_id"), "link cluster signals");
+      const byId = new Map(
+        (must(await db.from("signal_clusters").select(CLUSTER_SELECT).eq("organization_id", org).in("id", inserted.map((r) => r.id)), "reload clusters") as Record<string, unknown>[]).map((r) => [r.id as string, mapCluster(r)]),
+      );
+      return inserted.map((r) => byId.get(r.id)!).filter(Boolean);
     },
     async listClusters(filter) {
       let q = db.from("signal_clusters").select(CLUSTER_SELECT).eq("organization_id", org).order("signal_count", { ascending: false }).limit(filter.limit ?? 200);
@@ -310,8 +311,9 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
     async countSignalsSince(filter) {
       let q = db.from("signals").select("signal_type").eq("organization_id", org).gte("created_at", filter.since).limit(5000);
       if (filter.query) {
-        const safe = filter.query.replace(/[%_,()]/g, " ").slice(0, 100);
-        q = q.or(`problem.ilike.%${safe}%,category.ilike.%${safe}%`);
+        // PostgREST filter grammar: strip metacharacters and quote the value (no filter injection).
+        const safe = filter.query.replace(/[%_,()"\\.:*]/g, " ").replace(/\s+/g, " ").trim().slice(0, 100);
+        if (safe) q = q.or(`problem.ilike."%${safe}%",category.ilike."%${safe}%"`);
       }
       if (filter.country) q = q.eq("country", filter.country);
       const rows = must(await q, "count signals") as Array<{ signal_type: string }>;
@@ -358,7 +360,8 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
       return res.data ? mapOpportunity(res.data) : null;
     },
     async listOpportunities(filter = {}) {
-      let q = db.from("opportunities").select().eq("organization_id", org).order("score_total", { ascending: false, nullsFirst: false }).limit(filter.limit ?? 100);
+      const from = filter.offset ?? 0;
+      let q = db.from("opportunities").select().eq("organization_id", org).order("score_total", { ascending: false, nullsFirst: false }).range(from, from + (filter.limit ?? 100) - 1);
       if (filter.runId) q = q.eq("research_run_id", filter.runId);
       if (filter.status) q = q.eq("status", filter.status);
       return must(await q, "list opportunities").map(mapOpportunity);
@@ -644,6 +647,12 @@ export function createSupabaseRepositories(db: SupabaseClient, actor: Actor, opt
           .single(),
         "upsert connector setting",
       );
+    },
+    async consumeRateLimit(bucket, maxEvents, windowSeconds) {
+      if (options.system) return true; // scheduled jobs are not user traffic
+      const res = await db.rpc("consume_rate_limit", { bucket, max_events: maxEvents, window_seconds: windowSeconds });
+      if (res.error) throw new Error(`rate limit: ${res.error.message}`);
+      return res.data === true;
     },
     async audit(action, entityType, entityId, metadata) {
       if (options.system) {
